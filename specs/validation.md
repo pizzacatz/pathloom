@@ -11,8 +11,10 @@ Regression coverage:
 - File import, edits after import, undo/switch-back, and exact source downloads.
 - Center/zoom and selected step/history survive rendering, editor toggles, and resize; Clear trace preserves the viewport.
 - Branch buttons and step picker provide textual, keyboard-operable selection while preview warnings remain independent.
-- Responsive view switching at 320, 390, 768, and 1440 px, long labels, non-ASCII input, an 81-node graph, and 200% root text size.
+- Responsive drawers and layout at 320, 390, 768, and 1440 px, long labels, non-ASCII input, an 81-node graph, and 200% root text size.
 - axe WCAG A/AA checks on the initial and selected-branch states. Edge-label contrast was corrected based on measured findings.
+
+Additional coverage: maximum canvas height, independent sidebar collapse, persisted panel visibility, mobile Escape/focus recovery, optional overview panning, and 500 ms edge flyovers. Flyover checks sample the camera against the curve, verify destination centering/constant zoom, and test cancellation/reduced motion.
 
 Visual review: desktop 1440 × 900 and mobile 320/390 × 900. Inspect the editor, preview, trace controls, and wrapped toolbar.
 

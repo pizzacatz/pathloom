@@ -5,117 +5,120 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pathloom</title>
 <style>
-:root { color-scheme:dark; --bg:#0f1420; --panel:#182033; --editor:#0c111b; --ink:#e8ecf5; --muted:#adb9d0; --accent:#82b3ff; --gold:#ffd166; --err:#ff9292; --border:#33405f; --space-1:8px; --space-2:12px; --space-3:16px; --space-4:24px; --radius:6px; --small:0.875rem; }
+:root { color-scheme:dark; --bg:#090a0d; --panel:#0f1115; --surface:#161922; --ink:#f4f4f6; --muted:#a6adba; --accent:#38bdf8; --next:#a5b4fc; --err:#ff9999; --border:#343945; --radius:4px; }
 * { box-sizing:border-box; }
 [hidden], .hidden { display:none !important; }
-html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,sans-serif; }
-body { height:100dvh; display:flex; flex-direction:column; }
-button, textarea, select { font:inherit; }
-button, select { min-height:44px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--ink); padding:var(--space-1) var(--space-2); font-size:var(--small); cursor:pointer; }
+html,body { margin:0; width:100%; height:100%; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,sans-serif; }
+body { height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+button,select,textarea { font:inherit; }
+button,select { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--ink); min-height:30px; padding:3px 8px; cursor:pointer; }
 button:hover:not(:disabled) { border-color:var(--accent); }
 button:disabled { opacity:.5; cursor:default; }
-button.primary, button[aria-pressed="true"] { background:var(--accent); color:#101a2b; border-color:var(--accent); }
-:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
-header { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-1) var(--space-4); padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
-h1 { font-size:1.25rem; margin:0; }
-h2, p { margin:0; }
-h2 { font-size:1rem; }
-.brand { margin-right:auto; }
-.brand p, .muted { color:var(--muted); font-size:var(--small); }
-.actions { display:flex; gap:var(--space-1); flex-wrap:wrap; align-items:center; }
-#main { display:flex; flex:1; min-height:320px; }
-#editor { display:flex; flex-direction:column; width:clamp(300px,32vw,480px); border-right:1px solid var(--border); background:var(--editor); }
-.panel-head { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); }
-.panel-head label, .panel-head h2 { margin-right:auto; font-weight:600; }
-#src { flex:1; width:100%; min-height:180px; resize:none; border:0; padding:var(--space-3); background:var(--editor); color:var(--ink); font:0.875rem/1.7 ui-monospace,Consolas,monospace; tab-size:2; }
-#src:focus-visible { outline-offset:-3px; }
-#save-status, #example-note, #file-status { padding:var(--space-1) var(--space-3); font-size:var(--small); overflow-wrap:anywhere; }
-#save-status { color:var(--muted); }
-#example-note { color:var(--gold); }
-#preview { display:flex; flex-direction:column; flex:1; min-width:0; }
-#stage { flex:1; min-height:220px; overflow:hidden; position:relative; }
+button[data-attention="true"]::after { content:" •"; color:var(--err); }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+button[aria-expanded="true"] { border-color:var(--accent); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+h2,p { margin:0; }
+h2 { font-size:14px; }
+#controls { display:flex; gap:6px; align-items:center; flex:none; min-height:38px; padding:4px 8px; border-bottom:1px solid var(--border); background:var(--panel); overflow-x:auto; }
+#controls button { white-space:nowrap; flex:none; }
+.control-group { display:flex; gap:4px; align-items:center; flex:none; }
+.control-group + .control-group { padding-left:6px; border-left:1px solid var(--border); }
+#main { display:flex; flex:1; min-height:0; position:relative; }
+#preview { flex:1; min-width:0; position:relative; }
+#stage { width:100%; height:100%; overflow:hidden; touch-action:none; }
 #stage svg { width:100%; height:100%; display:block; }
-#stage .empty { padding:var(--space-4); color:var(--muted); }
-#status, #error-box { padding:var(--space-1) var(--space-3); border-bottom:1px solid var(--border); font-size:var(--small); overflow-wrap:anywhere; }
-#error-box { color:var(--err); }
-#err-details { max-height:140px; overflow:auto; white-space:pre-wrap; font:inherit; }
-summary { cursor:pointer; min-height:32px; }
-#trace { padding:var(--space-2) var(--space-3); border-top:1px solid var(--border); max-height:38vh; overflow:auto; }
-#trace-status { margin:var(--space-1) 0; overflow-wrap:anywhere; }
-#branches { display:flex; flex-wrap:wrap; gap:var(--space-1); }
-#branches button { text-align:left; white-space:normal; overflow-wrap:anywhere; max-width:100%; }
-#step-picker { max-width:100%; min-width:0; flex:1; }
-#help { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
-#help p { max-width:85ch; margin:var(--space-1) 0; }
-#mobile-views { display:none; padding:var(--space-1) var(--space-3); gap:var(--space-1); }
-.viewer .authoring, .viewer #editor { display:none !important; }
-#stage g.node, #stage g.edgePaths path, #stage g.edgeLabels g.edgeLabel { cursor:pointer; }
+#stage .empty { padding:24px; color:var(--muted); }
+.sidebar { display:flex; flex-direction:column; flex:none; width:260px; min-height:0; background:var(--panel); border-left:1px solid var(--border); }
+#editor { width:300px; border-left:0; border-right:1px solid var(--border); }
+.panel-head { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--border); }
+.panel-head label { font-weight:600; }
+.panel-content { padding:10px; overflow:auto; min-height:0; }
+.actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+#src { flex:1; min-height:100px; width:100%; resize:none; padding:12px; border:0; background:var(--bg); color:var(--ink); font:13px/1.65 ui-monospace,Consolas,monospace; }
+#src:focus-visible { outline-offset:-2px; }
+#save-status,#status,#file-status,#example-note { font-size:12px; color:var(--muted); padding:4px 10px; overflow-wrap:anywhere; }
+#file-actions { padding:8px 10px; }
+#trace-status { margin:10px 0; overflow-wrap:anywhere; }
+#branches { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
+#branches button { text-align:left; overflow-wrap:anywhere; }
+#step-picker { width:100%; min-width:0; margin-top:8px; }
+summary { cursor:pointer; padding:5px 0; }
+#help p { margin-bottom:12px; }
+#help code { color:var(--accent); overflow-wrap:anywhere; }
+#error-box { padding:8px 10px; color:var(--err); border-bottom:1px solid var(--border); font-size:13px; }
+#err-details { max-height:140px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 ui-monospace,monospace; }
+.viewer .authoring,.viewer #editor { display:none !important; }
+#stage g.node,#stage g.edgePaths path,#stage g.edgeLabels g.edgeLabel { cursor:pointer; }
 #stage g.edgeLabels g.edgeLabel * { pointer-events:auto; }
-#stage .edgeLabel span { color:var(--ink) !important; background-color:var(--panel) !important; }
-.dim { opacity:.6; }
+#stage .edgeLabel span { color:var(--ink) !important; background:var(--panel) !important; }
+.dim { opacity:.65; }
 g.node:focus { opacity:1; }
-g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--gold) !important; stroke-width:4px !important; }
-g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; stroke-dasharray:6 3; }
+g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; }
+g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--next) !important; stroke-width:2px !important; stroke-dasharray:5 3; }
 path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
-@media (max-width:700px) {
-  #mobile-views { display:flex; }
-  #toggle { display:none; }
-  #main { min-height:360px; }
-  #editor { width:100%; border-right:0; }
-  body[data-view="source"] #preview, body[data-view="preview"] #editor { display:none; }
-  body.viewer #preview { display:flex; }
-  body[data-view="source"]:not(.viewer) #editor.hidden { display:flex !important; }
-  #trace { max-height:42vh; }
-  header { padding:var(--space-1) var(--space-3); }
+#overview { position:absolute; right:10px; bottom:10px; width:190px; height:155px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); }
+#overview .panel-head { padding:3px 6px; }
+#overview-map { display:block; width:100%; height:120px; cursor:crosshair; touch-action:none; }
+#overview-window { fill:rgba(56,189,248,.12); stroke:var(--accent); stroke-width:2; vector-effect:non-scaling-stroke; pointer-events:none; }
+@media(max-width:1000px) {
+  .sidebar { position:absolute; top:0; bottom:0; right:0; z-index:5; width:min(300px,85vw); box-shadow:-4px 0 12px #0008; }
+  #editor { left:0; right:auto; }
+  button,select { min-height:44px; }
+  #controls { min-height:52px; }
 }
-@media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+@media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
 </style>
 </head>
-<body data-view="source">
-<header>
-  <div class="brand"><h1>Pathloom</h1><p>Offline Mermaid workspace</p></div>
-  <div class="actions">
-    <button id="toggle" class="authoring" aria-controls="editor" aria-expanded="true">Hide source</button>
-    <button id="export" class="authoring primary">Export viewer</button>
-    <button id="help-toggle" aria-controls="help" aria-expanded="false">Help</button>
+<body>
+<header id="controls" aria-label="Workspace controls">
+  <div class="control-group">
+    <button id="toggle" class="authoring" aria-controls="editor" aria-expanded="false">Source</button>
+    <button id="trace-toggle" aria-controls="trace" aria-expanded="false">Path</button>
+  </div>
+  <div class="control-group" role="group" aria-label="Canvas controls">
+    <button id="zin" aria-label="Zoom in" disabled>+</button><button id="zout" aria-label="Zoom out" disabled>−</button>
+    <button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
+    <button id="overview-toggle" aria-controls="overview" aria-expanded="false">Overview</button>
+  </div>
+  <div class="control-group">
+    <button id="export" class="authoring">Export viewer</button><button id="help-toggle" aria-controls="help" aria-expanded="false">Help</button>
   </div>
 </header>
-<section id="help" hidden aria-label="Workspace help">
-  <p><strong>Write a diagram.</strong> Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. Label a branch with <code>B -->|Yes| C[Done]</code>. Changes render automatically.</p>
-  <p><strong>Follow a path.</strong> Select a step in the diagram or the step list. Next follows one connection; at a decision, choose a labeled branch. Back retraces your path. Arrow keys navigate when the diagram has focus.</p>
-  <p><strong>Keep or share.</strong> Download source creates an editable .mmd file. Export viewer creates a validated, interactive HTML file anyone can open offline. Source saves in this browser when available; download a copy for safekeeping.</p>
-</section>
-<div id="mobile-views" class="authoring" role="group" aria-label="Workspace view">
-  <button id="source-view" aria-pressed="true" aria-controls="editor">Source</button>
-  <button id="preview-view" aria-pressed="false" aria-controls="preview">Preview</button>
-</div>
+<p id="notice" class="sr-only" role="status"></p>
 <main id="main">
-  <section id="editor" aria-label="Source editor">
-    <div class="panel-head"><label for="src">Mermaid source</label><button id="render">Render now</button></div>
-    <div class="panel-head actions">
-      <button id="open-source">Open Mermaid file</button><button id="download-source">Download source</button>
-      <button id="undo-import" hidden>Undo file replacement</button>
-      <input id="file-input" type="file" accept=".mmd,.mermaid,.txt,text/plain" hidden />
-    </div>
-    <p id="save-status" role="status"></p>
-    <p id="example-note">Example: workspace approval · Fictional people and companies</p>
+  <section id="editor" class="sidebar hidden" aria-label="Source editor">
+    <div class="panel-head"><label for="src">Mermaid source</label><button id="source-close" aria-label="Close source panel">×</button></div>
+    <div id="file-actions" class="actions"><button id="render">Render</button><button id="open-source">Open file</button><button id="download-source">Download source</button><button id="undo-import" hidden>Undo replacement</button><input id="file-input" type="file" accept=".mmd,.mermaid,.txt,text/plain" hidden /></div>
+    <p id="save-status" role="status"></p><p id="status" role="status">Rendering…</p>
+    <div id="error-box" hidden><p id="err" role="alert"></p><details><summary>Technical details</summary><pre id="err-details"></pre></details></div>
+    <details id="example-note"><summary>Example: workspace approval</summary><p>Fictional people and companies.</p></details>
     <p id="file-status" role="status" hidden></p>
     <textarea id="src" spellcheck="false" aria-describedby="save-status" aria-label="Mermaid source"></textarea>
   </section>
   <section id="preview" aria-label="Diagram preview">
-    <div class="panel-head"><h2>Preview</h2><div class="actions" role="group" aria-label="Canvas controls">
-      <button id="zin" disabled>Zoom in</button><button id="zout" disabled>Zoom out</button><button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
-    </div></div>
-    <p id="status" role="status">Rendering…</p>
-    <div id="error-box" hidden><p id="err" role="alert"></p><details><summary>Technical details</summary><pre id="err-details"></pre></details></div>
     <div id="stage" role="region" aria-label="Interactive diagram" tabindex="0"></div>
-    <section id="trace" aria-label="Follow a path">
-      <div class="actions"><h2>Follow a path</h2><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear trace</button></div>
-      <p id="trace-status" role="status">Select a step to begin.</p>
-      <div class="actions"><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></div>
-      <div id="branches" role="group" aria-label="Available next steps"></div>
-    </section>
+    <aside id="overview" hidden aria-label="Diagram overview"><div class="panel-head"><span>Overview</span><button id="overview-close" aria-label="Close overview">×</button></div><svg id="overview-map" role="img" aria-label="Diagram overview; click to pan"></svg></aside>
   </section>
+  <aside id="trace" class="sidebar hidden" aria-label="Follow a path">
+    <div class="panel-head"><h2>Follow a path</h2><button id="trace-close" aria-label="Close path panel">×</button></div>
+    <div class="panel-content">
+      <div class="actions"><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear</button></div>
+      <p id="trace-status" role="status">Select a step to begin.</p>
+      <div id="branches" role="group" aria-label="Available next steps"></div>
+      <details id="jump"><summary>Jump to step</summary><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></details>
+    </div>
+  </aside>
+  <aside id="help" class="sidebar hidden" aria-label="Workspace help">
+    <div class="panel-head"><h2>Help</h2><button id="help-close" aria-label="Close help panel">×</button></div>
+    <div class="panel-content">
+      <p><strong>Navigate.</strong> Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
+      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear removes selection without moving the view.</p>
+      <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
+      <p><strong>Write.</strong> Open Source. Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. A labeled branch looks like <code>B -->|Yes| C[Done]</code>.</p>
+      <p><strong>Keep or share.</strong> Download source saves editable Mermaid text. Export viewer validates and downloads an interactive offline HTML file. Download source for a portable backup.</p>
+    </div>
+  </aside>
 </main>
 <script>
 (function(ZM,Dg){typeof exports=="object"&&typeof module<"u"?module.exports=Dg():typeof define=="function"&&define.amd?define(Dg):(ZM=typeof globalThis<"u"?globalThis:ZM||self,ZM.mermaid=Dg())})(this,function(){var dYe,gYe;"use strict";function ZM(i){for(var a=[],u=1;u<arguments.length;u++)a[u-1]=arguments[u];var d=Array.from(typeof i=="string"?[i]:i);d[d.length-1]=d[d.length-1].replace(/\r?\n([\t ]*)$/,"");var p=d.reduce(function(y,E){var _=E.match(/\n([\t ]+|(?!\s).)/g);return _?y.concat(_.map(function(A){var P,R;return(R=(P=A.match(/[\t ]/g))===null||P===void 0?void 0:P.length)!==null&&R!==void 0?R:0})):y},[]);if(p.length){var v=new RegExp(`
@@ -2191,7 +2194,12 @@ function saveSource() {
   byId("save-status").textContent = storageAvailable ? "Saved in this browser" : "Not saved in this browser · Download source to keep a copy";
   byId("example-note").hidden = srcEl.value !== DEFAULT_SRC;
 }
-function setStatus(message) { statusEl.textContent = message; }
+function setStatus(message) {
+  statusEl.textContent = message;
+  byId("toggle").title = message;
+  byId("toggle").dataset.attention = String(/out of date|No preview|Source is empty/.test(message));
+  byId("notice").textContent = message;
+}
 function clearError() {
   errEl.textContent = "";
   byId("err-details").textContent = "";
@@ -2205,15 +2213,48 @@ function showError(error, operation = "render") {
   byId("err-details").textContent = detail;
   byId("error-box").hidden = false;
   setStatus(lastRenderedSource === null ? "No preview available" : "Preview is out of date · Showing the last valid diagram");
+  if (VIEWER) {
+    byId("trace").querySelector(".panel-content").prepend(statusEl, byId("error-box"));
+    setPanel("trace", true);
+  } else setPanel("editor", true);
 }
-function showView(view) {
-  document.body.dataset.view = view;
-  byId("source-view").setAttribute("aria-pressed", String(view === "source"));
-  byId("preview-view").setAttribute("aria-pressed", String(view === "preview"));
-  requestAnimationFrame(resizeCanvas);
+const panelButtons = { editor: "toggle", trace: "trace-toggle", help: "help-toggle" };
+const PANEL_KEY = "pathloom.panels.v1";
+let animationFrame = null;
+function cancelFlyover() {
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+  animationFrame = null;
+  stage.removeAttribute("aria-busy");
 }
+function setPanel(id, open, returnFocus = false) {
+  cancelFlyover();
+  const panel = byId(id);
+  if (open && matchMedia("(max-width:1000px)").matches) {
+    Object.keys(panelButtons).filter(key => key !== id).forEach(key => {
+      byId(key).classList.add("hidden");
+      byId(panelButtons[key]).setAttribute("aria-expanded", "false");
+    });
+  }
+  panel.classList.toggle("hidden", !open);
+  byId(panelButtons[id]).setAttribute("aria-expanded", String(open));
+  if (returnFocus) byId(panelButtons[id]).focus();
+  if (!VIEWER) try {
+    localStorage.setItem(PANEL_KEY, JSON.stringify(Object.fromEntries(Object.keys(panelButtons).map(key => [key, !byId(key).classList.contains("hidden")]))));
+  } catch { /* Layout persistence is optional. */ }
+  resizeCanvas();
+}
+function showView(view) { if (view === "source") setPanel("editor", true); }
 srcEl.value = restoreSource();
-if (VIEWER) { document.body.classList.add("viewer"); document.body.dataset.view = "preview"; }
+if (VIEWER) document.body.classList.add("viewer");
+else try {
+  const panels = JSON.parse(localStorage.getItem(PANEL_KEY) || "{}");
+  for (const id of Object.keys(panelButtons)) {
+    if (panels[id] && (!matchMedia("(max-width:1000px)").matches || id === "editor")) {
+      byId(id).classList.remove("hidden");
+      byId(panelButtons[id]).setAttribute("aria-expanded", "true");
+    }
+  }
+} catch { /* Defaults give the canvas the full workspace. */ }
 saveSource();
 
 mermaid.initialize({ startOnLoad:false, theme:"dark", securityLevel:"strict",
@@ -2226,7 +2267,7 @@ function frame() {
     try {
       const p = VP.panZoom.getPan(), z = VP.panZoom.getZoom();
       const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y);
-      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); }
+      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); updateOverview(); }
     } catch (e) { /* ignore between renders */ }
   }
   requestAnimationFrame(frame);
@@ -2236,6 +2277,7 @@ requestAnimationFrame(frame);
 let _panZoom = null, _rid = 0;
 
 async function renderGraph() {
+  cancelFlyover();
   const src = srcEl.value;
   const requestId = ++_rid;
   saveSource();
@@ -2272,6 +2314,7 @@ async function renderGraph() {
   if (!stage.clientWidth || !stage.clientHeight) { pendingPreview = true; return false; }
   const savedView = captureView();
 
+  cancelFlyover();
   VP = null;
   if (_panZoom) { try { _panZoom.destroy(); } catch (e) {} _panZoom = null; }
   stage.innerHTML = svg;
@@ -2286,6 +2329,7 @@ async function renderGraph() {
     fit:true, center:true, minZoom:0.2, maxZoom:12, zoomScaleSensitivity:0.35 });
   _panZoom = panZoom;
   if (savedView) restoreView(savedView);
+  buildOverview(svgEl);
   lastRenderedSource = src;
   setStatus("Preview up to date");
   ["zin", "zout", "fit", "onehundred"].forEach(id => byId(id).disabled = false);
@@ -2370,13 +2414,67 @@ async function renderGraph() {
       .forEach(e => e.classList.remove("hl-cur","hl-next","hl-edge","dim"));
   }
   function centerOn(el) {
+    // Move only when the selected node is outside a comfortable visible margin.
     try {
       const sr = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
-      const dx = (sr.left + sr.width/2) - (r.left + r.width/2);
-      const dy = (sr.top + sr.height/2) - (r.top + r.height/2);
+      const margin = 24;
+      const dx = r.width > sr.width - margin * 2 ? sr.left + sr.width/2 - (r.left + r.width/2)
+        : r.left < sr.left + margin ? sr.left + margin - r.left
+        : r.right > sr.right - margin ? sr.right - margin - r.right : 0;
+      const dy = r.height > sr.height - margin * 2 ? sr.top + sr.height/2 - (r.top + r.height/2)
+        : r.top < sr.top + margin ? sr.top + margin - r.top
+        : r.bottom > sr.bottom - margin ? sr.bottom - margin - r.bottom : 0;
       const ctm = svgEl.getScreenCTM();
       panZoom.panBy({ x: dx / ctm.a, y: dy / ctm.d });
-    } catch (e) {}
+    } catch { /* A selected node still has a text equivalent. */ }
+  }
+  function flyTo(edge) {
+    cancelFlyover();
+    if (matchMedia("(prefers-reduced-motion:reduce)").matches) { go(edge.end); return; }
+    try {
+      const len = edge.path.getTotalLength();
+      const inverse = viewport.getCTM().inverse();
+      const transforms = new Map([edge.path, nodeEls[edge.start], nodeEls[edge.end]].map(element => [element, inverse.multiply(element.getCTM())]));
+      const toContent = (element, point) => {
+        const svgPoint = svgEl.createSVGPoint();
+        svgPoint.x = point.x; svgPoint.y = point.y;
+        return svgPoint.matrixTransform(transforms.get(element));
+      };
+      const nodeCenter = key => {
+        const box = nodeEls[key].getBBox();
+        return toContent(nodeEls[key], { x: box.x + box.width/2, y: box.y + box.height/2 });
+      };
+      const view = captureView();
+      const start = nodeCenter(edge.start), end = nodeCenter(edge.end);
+      const at = fraction => {
+        // Include node centers at each end, with most of the trip on the actual curve.
+        if (fraction < .08) {
+          const first = toContent(edge.path, edge.path.getPointAtLength(0));
+          return { x: start.x + (first.x-start.x)*fraction/.08, y: start.y + (first.y-start.y)*fraction/.08 };
+        }
+        if (fraction > .92) {
+          const last = toContent(edge.path, edge.path.getPointAtLength(len));
+          return { x: last.x + (end.x-last.x)*(fraction-.92)/.08, y: last.y + (end.y-last.y)*(fraction-.92)/.08 };
+        }
+        return toContent(edge.path, edge.path.getPointAtLength((fraction-.08)/.84*len));
+      };
+      if (!view || !len) { go(edge.end); return; }
+      // Keep the camera's initial offset and dissolve it as it follows the line.
+      const offset = { x: view.x-start.x, y: view.y-start.y };
+      const begun = performance.now();
+      stage.setAttribute("aria-busy", "true");
+      function tick(now) {
+        const t = Math.min(1, (now-begun)/500);
+        const progress = t*t*(3-2*t);
+        const point = at(progress);
+        const sizes = panZoom.getSizes();
+        panZoom.pan({ x: sizes.width/2-(point.x+offset.x*(1-progress))*view.scale,
+          y: sizes.height/2-(point.y+offset.y*(1-progress))*view.scale });
+        if (t < 1) animationFrame = requestAnimationFrame(tick);
+        else { animationFrame = null; stage.removeAttribute("aria-busy"); go(edge.end, true, false); }
+      }
+      animationFrame = requestAnimationFrame(tick);
+    } catch { cancelFlyover(); go(edge.end); }
   }
   function focus(key, center = true) {
     if (!nodeEls[key]) return;
@@ -2423,9 +2521,10 @@ async function renderGraph() {
     });
     if (hadBranchFocus) (branches.querySelector("button") || picker).focus();
   }
-  function go(key, record) { if (!nodeEls[key]) return;
+  function go(key, record, reveal = true) { if (!nodeEls[key]) return;
+    cancelFlyover();
     if (record !== false && current && current !== key) history.push(current);
-    current = key; focus(key); updateTraceControls(); }
+    current = key; focus(key, reveal); updateTraceControls(); }
   function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(nodeEls)[0]; if (first) go(first); return; }
     const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
   function stepBack() { if (history.length) go(history.pop(), false); }
@@ -2444,29 +2543,49 @@ async function renderGraph() {
   edgeEls.forEach((p, i) => {
     const hit = tracedEdges.find(e => e.path === p);
     if (!hit) return;
-    const jump = ev => { ev.stopPropagation(); go(hit.end); };
+    const jump = ev => { ev.stopPropagation(); flyTo(hit); };
     p.addEventListener("click", jump);
+    const hitArea = p.cloneNode(false);
+    hitArea.removeAttribute("id");
+    hitArea.removeAttribute("marker-start"); hitArea.removeAttribute("marker-end");
+    hitArea.removeAttribute("style");
+    hitArea.setAttribute("class", "edge-hit");
+    hitArea.setAttribute("fill", "none");
+    hitArea.setAttribute("stroke", "transparent");
+    hitArea.setAttribute("stroke-width", "12");
+    hitArea.setAttribute("vector-effect", "non-scaling-stroke");
+    hitArea.setAttribute("pointer-events", "stroke");
+    hitArea.setAttribute("aria-hidden", "true");
+    hitArea.addEventListener("click", jump);
+    p.after(hitArea);
     if (aligned && labelEls[i]) labelEls[i].addEventListener("click", jump);
   });
 
-  document.getElementById("zin").onclick   = () => panZoom.zoomIn();
-  document.getElementById("zout").onclick  = () => panZoom.zoomOut();
-  document.getElementById("fit").onclick   = () => { panZoom.resize(); panZoom.fit(); panZoom.center(); };
+  document.getElementById("zin").onclick   = () => { cancelFlyover(); panZoom.zoomIn(); };
+  document.getElementById("zout").onclick  = () => { cancelFlyover(); panZoom.zoomOut(); };
+  document.getElementById("fit").onclick   = () => { cancelFlyover(); panZoom.resize(); panZoom.fit(); panZoom.center(); };
   document.getElementById("onehundred").onclick = () => {
+    cancelFlyover();
     const rz = panZoom.getSizes().realZoom;
     if (rz > 0) panZoom.zoomBy(1 / rz);
     if (current && nodeEls[current]) centerOn(nodeEls[current]);
   };
   document.getElementById("back").onclick  = () => stepBack();
   document.getElementById("next").onclick  = () => stepNext();
-  document.getElementById("reset").onclick = () => { clearHL(); current = null; history.length = 0;
+  document.getElementById("reset").onclick = () => { cancelFlyover(); clearHL(); current = null; history.length = 0;
     Object.values(nodeEls).forEach(node => node.setAttribute("aria-pressed", "false")); updateTraceControls(); };
   document.onkeydown = ev => {
     if (!stage.contains(document.activeElement)) return;   // don't hijack typing in the editor
     if (ev.key === "ArrowRight" || ev.key === "ArrowDown") { ev.preventDefault(); stepNext(); }
     else if (ev.key === "ArrowLeft" || ev.key === "ArrowUp") { ev.preventDefault(); stepBack(); }
+    else {
+      const control = { f:"fit", F:"fit", "+":"zin", "=":"zin", "-":"zout", "0":"onehundred" }[ev.key];
+      if (control) { ev.preventDefault(); byId(control).click(); }
+    }
   };
 
+  stage.onpointerdown = cancelFlyover;
+  stage.onwheel = cancelFlyover;
   VP = { panZoom: panZoom, relayout: relayoutLabels, lastKey: "" };
   try { relayoutLabels(); } catch { /* Optional geometry enhancement. */ }
   if (current) focus(current, false);
@@ -2488,6 +2607,7 @@ function restoreView(view) {
   _panZoom.pan({ x: sizes.width / 2 - view.x * view.scale, y: sizes.height / 2 - view.y * view.scale });
 }
 function resizeCanvas() {
+  cancelFlyover();
   if (pendingPreview && stage.clientWidth && stage.clientHeight) { clearTimeout(_typeTimer); renderGraph(); return; }
   if (!_panZoom || !stage.clientWidth || !stage.clientHeight) return;
   const view = captureView();
@@ -2495,24 +2615,75 @@ function resizeCanvas() {
   if (view) restoreView(view);
 }
 byId("render").onclick = () => { clearTimeout(_typeTimer); renderGraph(); };
-byId("toggle").onclick = () => {
-  const hidden = byId("editor").classList.toggle("hidden");
-  byId("toggle").setAttribute("aria-expanded", String(!hidden));
-  byId("toggle").textContent = hidden ? "Show source" : "Hide source";
-  resizeCanvas();
+for (const [panel, button] of Object.entries(panelButtons)) {
+  byId(button).onclick = () => setPanel(panel, byId(panel).classList.contains("hidden"));
+}
+byId("source-close").onclick = () => setPanel("editor", false, true);
+byId("trace-close").onclick = () => setPanel("trace", false, true);
+byId("help-close").onclick = () => setPanel("help", false, true);
+function toggleOverview(open) {
+  byId("overview").hidden = !open;
+  byId("overview-toggle").setAttribute("aria-expanded", String(open));
+  updateOverview();
+}
+byId("overview-toggle").onclick = () => toggleOverview(byId("overview").hidden);
+byId("overview-close").onclick = () => { toggleOverview(false); byId("overview-toggle").focus(); };
+let overviewBox = null;
+function buildOverview(svg) {
+  const map = byId("overview-map");
+  map.replaceChildren();
+  const content = svg.querySelector(".svg-pan-zoom_viewport");
+  if (!content) return;
+  const copy = content.cloneNode(true);
+  copy.removeAttribute("transform");
+  copy.style.removeProperty("transform");
+  copy.querySelectorAll("style").forEach(style => { style.textContent = style.textContent.replaceAll("#" + svg.id, "#overview-map"); });
+  copy.removeAttribute("id");
+  copy.querySelectorAll("[tabindex], [role], [aria-pressed]").forEach(el => {
+    el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-pressed");
+  });
+  // Prefix IDs and their references to keep markers and styles isolated from the main SVG.
+  copy.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id);
+  const defs = svg.querySelector("defs")?.cloneNode(true);
+  if (defs) { defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs); }
+  for (const root of [copy, defs].filter(Boolean)) root.querySelectorAll("*").forEach(el => {
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.value.includes("url(#")) el.setAttribute(attr.name, attr.value.replace(/url\(#/g, "url(#overview-"));
+    }
+  });
+  map.append(copy);
+  overviewBox = content.getBBox();
+  const { x,y,width,height } = overviewBox;
+  map.setAttribute("viewBox", `${x-8} ${y-8} ${width+16} ${height+16}`);
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.id = "overview-window"; map.append(rect);
+  updateOverview();
+}
+function updateOverview() {
+  if (byId("overview").hidden || !overviewBox) return;
+  const view = captureView(), rect = byId("overview-window");
+  if (!view || !rect) return;
+  const { width,height } = _panZoom.getSizes();
+  for (const [name,value] of Object.entries({ x:view.x-width/view.scale/2, y:view.y-height/view.scale/2,
+    width:width/view.scale, height:height/view.scale })) rect.setAttribute(name, value);
+}
+byId("overview-map").onclick = event => {
+  if (!_panZoom) return;
+  cancelFlyover();
+  const map = byId("overview-map"), point = map.createSVGPoint();
+  point.x = event.clientX; point.y = event.clientY;
+  const target = point.matrixTransform(map.getScreenCTM().inverse());
+  const view = captureView();
+  if (view) restoreView({ ...view, x:target.x, y:target.y });
 };
-byId("source-view").onclick = () => {
-  byId("editor").classList.remove("hidden");
-  byId("toggle").setAttribute("aria-expanded", "true");
-  byId("toggle").textContent = "Hide source";
-  showView("source");
-};
-byId("preview-view").onclick = () => showView("preview");
-byId("help-toggle").onclick = () => {
-  byId("help").hidden = !byId("help").hidden;
-  byId("help-toggle").setAttribute("aria-expanded", String(!byId("help").hidden));
-  resizeCanvas();
-};
+window.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  cancelFlyover();
+  const open = Object.keys(panelButtons).filter(id => !byId(id).classList.contains("hidden"));
+  const panel = open.find(id => byId(id).contains(document.activeElement)) || open.at(-1);
+  if (panel) { setPanel(panel, false, true); event.preventDefault(); }
+  else if (!byId("overview").hidden) { toggleOverview(false); byId("overview-toggle").focus(); }
+});
 function download(contents, type, name) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const a = document.createElement("a");
@@ -2538,6 +2709,7 @@ byId("export").onclick = async () => {
     clone.querySelector("body").classList.add("viewer");
     clone.querySelector("body").dataset.view = "preview";
     clone.querySelector("#stage").replaceChildren();
+    clone.querySelector("#overview-map").replaceChildren();
     clone.querySelector("#src").textContent = "";
     clone.querySelector("#file-status").textContent = "";
     clone.querySelector("#save-status").textContent = "";
@@ -2586,6 +2758,7 @@ byId("undo-import").onclick = () => {
 };
 let _typeTimer = null;
 function sourceChanged() {
+  cancelFlyover();
   saveSource(); ++_rid;
   setStatus(lastRenderedSource === null ? "Changes pending · No preview yet" : "Changes pending · Preview is out of date");
   clearTimeout(_typeTimer);

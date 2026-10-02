@@ -6,7 +6,7 @@ The labeled example is fictional: Mara Vale reviews an Alderwick Systems workspa
 
 ## Write and keep your source
 
-- Changes save immediately in this browser when storage is available and render after 700 ms. **Render now** updates immediately. On mobile, the preview renders when you open **Preview**.
+- Changes save immediately in this browser when storage is available and render after 700 ms. **Render now** updates immediately. The canvas is always visible; open **Source** when you want to edit.
 - The save indicator reports success or failure independently of preview and trace status. When storage is unavailable, download your source; leaving with an unprotected draft prompts the browser's standard warning.
 - **Open Mermaid file** accepts source files. **Undo file replacement** restores the previous draft, including after further edits; pressing it again switches back. This recovery lasts for the current session.
 - **Download source** creates an editable `diagram.mmd` file, including unfinished or invalid source.
@@ -14,18 +14,19 @@ The labeled example is fictional: Mara Vale reviews an Alderwick Systems workspa
 
 ## Inspect a diagram
 
-- Desktop uses source and preview side by side. **Hide source / Show source** changes the layout. Mobile provides **Source / Preview** views with touch-sized controls.
-- **Fit**, **Actual size**, zoom buttons, and dragging control the canvas. Re-rendering, resizing, and source-panel toggling preserve the content point at the canvas center and the scale where possible.
-- Select a diagram node or use the labeled **Step** list. The current step and available next steps also appear as text. Use branch buttons at decisions, **Next** for one successor, and **Back** to retrace your path.
-- Nodes support Tab and Enter/Space. Arrow keys navigate only while the diagram has focus. Current selection is exposed programmatically; successor outlines are dashed. Focused nodes remain fully visible.
+- The canvas fills the window below a compact control strip. **Source**, **Path**, and **Help** each open a collapsible sidebar. They start closed, and studio panel visibility is remembered locally. On screens up to 1000 px, one temporary drawer opens at a time; Escape closes it and restores focus. No panel occupies a strip above or below the diagram.
+- **Fit**, **Actual size**, zoom buttons, and dragging control the canvas. Re-rendering, resizing, and panel toggling preserve the content point at the canvas center and the scale where possible. The optional **Overview** map shows the viewport and lets you click to pan; it also collapses.
+- Select a diagram node or open **Path → Jump to step** for the labeled **Step** list. The current step and available next steps also appear as text. Use branch buttons at decisions, **Next** for one successor, and **Back** to retrace your path.
+- Clicking a connecting line or its label flies along the actual edge curve for 500 ms to the destination, keeping zoom unchanged. Direct node selection and Back/Next pan only enough to bring the node into view. Dragging, zooming, layout changes, editing, or another selection cancel a flight. Reduced-motion preferences skip the animation.
+- Nodes support Tab and Enter/Space. With the diagram focused, arrows navigate, F fits, +/− zoom, and 0 restores actual size. Current selection is exposed programmatically; successor outlines are dashed. Focused nodes remain fully visible.
 - **Clear trace** clears selection/history without moving the canvas. Rendering preserves selected node and history when their IDs still exist.
-- Invalid source keeps the last valid diagram and explicitly marks it out of date. A fresh invalid diagram reports that no preview exists. Errors include recovery guidance and expandable technical details.
+- Invalid source keeps the last valid diagram and opens the Source panel with recovery guidance and expandable technical details. Source status reports outdated/empty/absent previews; a small dot on the Source control flags an outdated preview. Viewer errors open the Path sidebar. Routine feedback stays out of the canvas.
 
 ## Share a viewer
 
 **Export viewer** validates the exact current source by rendering it before downloading `flowchart.html`. Empty or invalid source cannot produce a broken export. Editing during validation cancels that export; retry with the updated source. Repeated activation is disabled while validating.
 
-The viewer contains the source and all runtime code, works offline, hides authoring controls, and never uses browser storage. Its errors remain visible in the preview. A download-started message reports the browser handoff, not a guarantee that a file was saved.
+The viewer contains the source and all runtime code, works offline, hides authoring controls, and never uses browser storage. Its errors open the Path sidebar. A download-started message reports the browser handoff, not a guarantee that a file was saved.
 
 ## Develop
 

@@ -5,8 +5,9 @@
 - [x] Validate exported snapshots and keep viewer failures visible.
 - [x] Separate truthful save, preview, and trace feedback.
 - [x] Preserve canvas position and valid trace state across rendering/layout changes.
-- [x] Add mobile Source/Preview switching and grouped, touch-sized controls.
-- [x] Add textual current/next steps, branch buttons, step selection, and accessible selection state.
+- [x] Make the canvas dominant with one compact strip, collapsible sidebars, mobile drawers, and an optional overview.
+- [x] Move textual current/next steps, branch buttons, and collapsible step selection into the Path sidebar.
+- [x] Add cancellable 500 ms edge-curve flyovers with constant zoom, wide click targets, and reduced-motion handling.
 - [x] Distinguish empty, stale, initial error, and successful previews with actionable guidance.
 - [x] Add exact source download and reversible file replacement.
 - [x] Add contextual help and consolidate styles into a small token system.

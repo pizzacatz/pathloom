@@ -4,7 +4,23 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const appURL = pathToFileURL(path.resolve('index.html')).href;
 
+async function openSource(page) {
+  if (await page.locator('#editor').evaluate(el => el.classList.contains('hidden'))) await page.locator('#toggle').click();
+}
+async function openPath(page, jump = false) {
+  if (await page.locator('#trace').evaluate(el => el.classList.contains('hidden'))) await page.locator('#trace-toggle').click();
+  if (jump) await page.locator('#jump').evaluate(el => { el.open = true; });
+}
+async function clickEdge(page, selector, fraction = .25) {
+  const point = await page.locator(selector).evaluate((edge, fraction) => {
+    const point = edge.getPointAtLength(edge.getTotalLength() * fraction);
+    const screen = point.matrixTransform(edge.getScreenCTM());
+    return { x: screen.x, y: screen.y };
+  }, fraction);
+  await page.mouse.click(point.x, point.y);
+}
 async function render(page, source) {
+  await openSource(page);
   await page.locator('#src').fill(source);
   await page.locator('#render').click();
   await expect(page.locator('#status')).not.toContainText('Rendering');
@@ -15,19 +31,23 @@ test('offline rendering, exact connections, chains, branches and keyboard trace'
   page.on('pageerror', e => errors.push(e.message));
   await context.setOffline(true);
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#stage g.node')).toHaveCount(8);
   await render(page, 'flowchart LR\nA[First step] --> AA[Second step] --> B{Choose path}\nB -->|Yes| C[Finish]\nB -->|No| D[Review]');
   await expect(page.locator('#stage g.node')).toHaveCount(5);
+  await openPath(page);
   await page.locator('#next').click();
   await expect(page.locator('.hl-cur')).toContainText('First step');
   await expect(page.locator('.hl-next')).toContainText('Second step');
   await expect(page.locator('.hl-edge')).toHaveCount(1);
+  await openPath(page);
   await page.locator('#next').click();
   await expect(page.locator('.hl-cur')).toContainText('Second step');
+  await openPath(page);
   await page.locator('#next').click();
   await expect(page.locator('#next')).toBeDisabled();
   await expect(page.locator('#trace-status')).toContainText('Choose a branch');
-  await page.locator('g.node').filter({ hasText: 'Finish' }).focus();
+  await page.locator('#stage g.node').filter({ hasText: 'Finish' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.hl-cur')).toContainText('Finish');
   await page.locator('#back').click();
@@ -37,6 +57,7 @@ test('offline rendering, exact connections, chains, branches and keyboard trace'
 
 test('invalid input preserves diagram, recovery works, newest render wins', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#stage svg')).toHaveCount(1);
   await render(page, 'flowchart LR\nA[Keep this] --> B[Visible]');
   await expect(page.locator('#stage')).toContainText('Keep this');
@@ -55,6 +76,7 @@ test('storage denied does not stop rendering; viewer never accesses storage', as
     Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage denied'); } });
   });
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#stage svg')).toHaveCount(1);
   await expect(page.locator('#save-status')).toContainText('Not saved');
   await page.goto(pathToFileURL(path.resolve('flowchart.html')).href);
@@ -65,6 +87,7 @@ test('storage denied does not stop rendering; viewer never accesses storage', as
 
 test('legacy draft is removed and new drafts persist', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await page.evaluate(() => { localStorage.setItem('mermaid_studio_src', 'legacy private draft'); });
   await page.reload();
   await expect(page.locator('#src')).not.toHaveValue('legacy private draft');
@@ -76,7 +99,9 @@ test('legacy draft is removed and new drafts persist', async ({ page }) => {
 
 test('export preserves current source safely and opens offline', async ({ page, context }, testInfo) => {
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#stage svg')).toHaveCount(1);
+  await render(page, 'flowchart TD\nA[Previous unshared label] --> B');
   const source = 'flowchart TD\nA[Exported chart] --> B[Done]\n%% </script><script>window.injected=true</script>';
   await page.locator('#src').fill(source);
   const downloadPromise = page.waitForEvent('download');
@@ -86,6 +111,7 @@ test('export preserves current source safely and opens offline', async ({ page, 
   await download.saveAs(output);
   const html = await fs.readFile(output, 'utf8');
   expect(html).not.toContain('</script><script>window.injected');
+  expect(html).not.toContain('Previous unshared label');
   await context.setOffline(true);
   await page.goto(pathToFileURL(output).href);
   await expect(page.locator('#stage')).toContainText('Exported chart');
@@ -96,12 +122,13 @@ test('export preserves current source safely and opens offline', async ({ page, 
 test('mobile toolbar does not overlap editor; non-flowchart diagrams render', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#save-status')).toContainText('Saved');
-  const header = await page.locator('header').boundingBox();
+  const header = await page.locator('#controls').boundingBox();
   const editor = await page.locator('#editor').boundingBox();
   expect(editor.y).toBeGreaterThanOrEqual(header.y + header.height);
   await render(page, 'sequenceDiagram\nAlice->>Bob: Hello');
-  await page.locator('#preview-view').click();
+  await page.locator('#source-close').click();
   await expect(page.locator('#stage svg')).toHaveCount(1);
   await expect(page.locator('#next')).toBeDisabled();
 });
@@ -110,12 +137,14 @@ test('invalid and empty exports never download; initial viewer failures stay vis
   let downloads = 0;
   page.on('download', () => downloads++);
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#stage svg')).toHaveCount(1);
   await render(page, 'flowchart LR\nA[');
   await page.locator('#export').click();
   await expect(page.locator('#err')).toContainText('Viewer not exported');
   await expect(page.locator('#error-box')).toBeVisible();
   await expect(page.locator('#status')).toContainText('out of date');
+  await openPath(page);
   await page.locator('#next').click();
   await expect(page.locator('#status')).toContainText('out of date');
   await render(page, '');
@@ -132,6 +161,7 @@ test('invalid and empty exports never download; initial viewer failures stay vis
 
 test('file import, editing, reversible replacement and exact source download', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   const original = await page.locator('#src').inputValue();
   const imported = 'flowchart TD\nA[Imported request] --> B[Done]';
   await page.locator('#file-input').setInputFiles({ name: 'sample.mmd', mimeType: 'text/plain', buffer: Buffer.from(imported) });
@@ -151,8 +181,11 @@ test('file import, editing, reversible replacement and exact source download', a
 
 test('rerender, editor toggle, resizing and clear trace preserve canvas context', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#status')).toContainText('up to date');
+  await openPath(page);
   await page.locator('#next').click();
+  await openPath(page);
   await page.locator('#next').click();
   await page.locator('#zin').click();
   const before = await page.evaluate(() => captureView());
@@ -172,7 +205,9 @@ test('rerender, editor toggle, resizing and clear trace preserve canvas context'
 
 test('branch buttons and step picker expose trace state without changing preview status', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#status')).toContainText('up to date');
+  await openPath(page, true);
   await page.locator('#step-picker').selectOption('Decision');
   await expect(page.locator('#trace-status')).toContainText('Current step: Workspace approved?');
   await expect(page.locator('.hl-cur')).toHaveAttribute('aria-pressed', 'true');
@@ -190,19 +225,21 @@ for (const width of [320, 390, 768, 1440]) {
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await page.goto(appURL);
+    await openSource(page);
     await page.locator('#src').fill('flowchart TD\nA["' + 'Long request '.repeat(12) + '"] --> B["確認済み"]');
     await page.locator('#render').click();
-    if (width <= 700) await page.locator('#preview-view').click();
+    if (width <= 1000) await page.locator('#source-close').click();
     await expect(page.locator('#status')).toContainText('up to date');
     await expect(page.locator('#stage svg')).toBeVisible();
+    await openPath(page, true);
     await page.locator('#step-picker').selectOption('A');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     const view = await page.evaluate(() => captureView());
     expect(view.scale).toBeGreaterThan(0);
-    if (width <= 700) {
-      await page.locator('#source-view').click();
+    if (width <= 1000) {
+      await openSource(page);
       await expect(page.locator('#src')).toBeVisible();
-      await page.locator('#preview-view').click();
+      await page.locator('#source-close').click();
       await expect(page.locator('.hl-cur')).toContainText('Long request');
     }
     expect(errors).toEqual([]);
@@ -211,13 +248,16 @@ for (const width of [320, 390, 768, 1440]) {
 
 test('large flowchart and enlarged text remain usable', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await render(page, 'flowchart TD\n' + Array.from({ length: 80 }, (_, i) => `N${i}[Step ${i}] --> N${i + 1}`).join('\n'));
   await expect(page.locator('#stage g.node')).toHaveCount(81);
+  await openPath(page, true);
   await page.locator('#step-picker').selectOption('N60');
   await expect(page.locator('#trace-status')).toContainText('Step 60');
   await page.evaluate(() => document.documentElement.style.fontSize = '200%');
   await expect(page.locator('#next')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await openPath(page);
   await page.locator('#next').click();
   await expect(page.locator('#trace-status')).toContainText('Step 61');
 });
@@ -225,9 +265,10 @@ test('large flowchart and enlarged text remain usable', async ({ page }) => {
 test('editor and traced diagram pass automated accessibility checks', async ({ page }) => {
   const { default: AxeBuilder } = require('@axe-core/playwright');
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#status')).toContainText('up to date');
   for (const selection of ['', 'Decision']) {
-    if (selection) await page.locator('#step-picker').selectOption(selection);
+    if (selection) { await openPath(page, true); await page.locator('#step-picker').selectOption(selection); }
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
     expect(result.violations).toEqual([]);
   }
@@ -235,6 +276,7 @@ test('editor and traced diagram pass automated accessibility checks', async ({ p
 
 test('export rejects edits made during validation and prevents duplicate activation', async ({ page }) => {
   await page.goto(appURL);
+  await openSource(page);
   await expect(page.locator('#status')).toContainText('up to date');
   await page.evaluate(() => {
     const original = mermaid.render.bind(mermaid);
@@ -251,4 +293,124 @@ test('export rejects edits made during validation and prevents duplicate activat
   await page.evaluate(() => window.releaseExport());
   await expect(page.locator('#export')).toBeEnabled();
   expect(downloads).toBe(0);
+});
+
+test('canvas uses full height and panels collapse independently without changing zoom', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  const stage = await page.locator('#stage').boundingBox();
+  expect(stage.height).toBeGreaterThan(850);
+  expect(stage.width).toBe(1440);
+  await page.locator('#zin').click();
+  const before = await page.evaluate(() => captureView());
+  await openSource(page);
+  await openPath(page);
+  await page.locator('#help-toggle').click();
+  await expect(page.locator('#editor')).toBeVisible();
+  await expect(page.locator('#trace')).toBeVisible();
+  await expect(page.locator('#help')).toBeVisible();
+  await page.locator('#help-close').click();
+  await page.locator('#source-close').click();
+  await expect(page.locator('#trace')).toBeVisible();
+  await page.locator('#trace-close').click();
+  await expect.poll(async () => {
+    const after = await page.evaluate(() => captureView());
+    return Math.max(...['x', 'y', 'scale'].map(key => Math.abs(after[key] - before[key])));
+  }).toBeLessThan(.1);
+  await openPath(page);
+  await page.reload();
+  await expect(page.locator('#trace')).toBeVisible();
+});
+
+test('mobile drawers close on Escape and return focus without shrinking the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  const before = await page.locator('#stage').boundingBox();
+  await openSource(page);
+  await openPath(page);
+  await expect(page.locator('#editor')).toBeHidden();
+  expect((await page.locator('#stage').boundingBox()).height).toBe(before.height);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#trace')).toBeHidden();
+  await expect(page.locator('#trace-toggle')).toBeFocused();
+});
+
+test('line click follows the curve for 500 ms, preserves zoom and lands on destination', async ({ page }) => {
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  await page.locator('#onehundred').click();
+  const edgeSelector = '#stage g.edgePaths path.LS-Decision.LE-Setup';
+  await page.evaluate(() => {
+    const node = stage.querySelector('g.node[data-id="Decision"]');
+    const svg = stage.querySelector('svg'), viewport = stage.querySelector('.svg-pan-zoom_viewport');
+    const box = node.getBBox(), point = svg.createSVGPoint();
+    point.x = box.x + box.width/2; point.y = box.y + box.height/2;
+    const center = point.matrixTransform(node.getCTM()).matrixTransform(viewport.getCTM().inverse());
+    restoreView({ ...captureView(), x: center.x, y: center.y });
+  });
+  await page.evaluate(() => {
+    window.flightSamples = [];
+    window.flightStart = null;
+    const sample = time => {
+      if (stage.getAttribute('aria-busy') === 'true') {
+        window.flightStart ??= time;
+        window.flightSamples.push({ time, ...captureView() });
+      } else if (window.flightStart !== null) window.flightEnd = time;
+      if (!window.flightEnd) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  const scale = await page.evaluate(() => captureView().scale);
+  await clickEdge(page, edgeSelector);
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#stage .hl-cur')).toContainText('Create a workspace');
+  await expect.poll(() => page.evaluate(() => window.flightEnd || 0)).toBeGreaterThan(0);
+  const result = await page.evaluate(() => {
+    const path = stage.querySelector('path.LS-Decision.LE-Setup'), viewport = stage.querySelector('.svg-pan-zoom_viewport');
+    const matrix = viewport.getCTM().inverse().multiply(path.getCTM());
+    const curve = Array.from({ length: 101 }, (_, i) => path.getPointAtLength(path.getTotalLength()*i/100).matrixTransform(matrix));
+    const middle = window.flightSamples.slice(Math.floor(window.flightSamples.length*.3), Math.floor(window.flightSamples.length*.7));
+    const curveDistance = Math.max(...middle.map(sample => Math.min(...curve.map(point => Math.hypot(sample.x-point.x, sample.y-point.y)))));
+    const node = stage.querySelector('.hl-cur').getBoundingClientRect(), canvas = stage.getBoundingClientRect();
+    return { curveDistance, elapsed: window.flightEnd - window.flightStart, samples: window.flightSamples,
+      dx: node.left + node.width/2 - canvas.left - canvas.width/2,
+      dy: node.top + node.height/2 - canvas.top - canvas.height/2, scale:captureView().scale };
+  });
+  expect(result.elapsed).toBeGreaterThan(430);
+  expect(result.elapsed).toBeLessThan(700);
+  expect(result.samples.length).toBeGreaterThan(8);
+  expect(result.curveDistance).toBeLessThan(5);
+  expect(Math.abs(result.samples[0].x - result.samples.at(-1).x) + Math.abs(result.samples[0].y - result.samples.at(-1).y)).toBeGreaterThan(20);
+  expect(result.scale).toBeCloseTo(scale, 4);
+  expect(Math.abs(result.dx)).toBeLessThan(2);
+  expect(Math.abs(result.dy)).toBeLessThan(2);
+});
+
+test('flyover cancels on manual navigation and reduced motion skips animation', async ({ page }) => {
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  await clickEdge(page, '#stage g.edgePaths path.LS-Decision.LE-Setup');
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await page.locator('#fit').click();
+  await expect(page.locator('#stage')).not.toHaveAttribute('aria-busy', 'true');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await clickEdge(page, '#stage g.edgePaths path.LS-Decision.LE-Setup');
+  await expect(page.locator('#stage .hl-cur')).toContainText('Create a workspace');
+  await expect(page.locator('#stage')).not.toHaveAttribute('aria-busy', 'true');
+});
+
+test('overview can be collapsed and used to pan without changing zoom', async ({ page }) => {
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  await page.locator('#overview-toggle').click();
+  await expect(page.locator('#overview')).toBeVisible();
+  const before = await page.evaluate(() => captureView());
+  await page.locator('#overview-map').click({ position: { x: 95, y: 90 } });
+  const after = await page.evaluate(() => captureView());
+  expect(after.scale).toBeCloseTo(before.scale, 4);
+  expect(Math.abs(after.y - before.y)).toBeGreaterThan(10);
+  await page.locator('#overview-close').click();
+  await expect(page.locator('#overview')).toBeHidden();
 });

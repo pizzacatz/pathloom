@@ -5,117 +5,120 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pathloom</title>
 <style>
-:root { color-scheme:dark; --bg:#0f1420; --panel:#182033; --editor:#0c111b; --ink:#e8ecf5; --muted:#adb9d0; --accent:#82b3ff; --gold:#ffd166; --err:#ff9292; --border:#33405f; --space-1:8px; --space-2:12px; --space-3:16px; --space-4:24px; --radius:6px; --small:0.875rem; }
+:root { color-scheme:dark; --bg:#090a0d; --panel:#0f1115; --surface:#161922; --ink:#f4f4f6; --muted:#a6adba; --accent:#38bdf8; --next:#a5b4fc; --err:#ff9999; --border:#343945; --radius:4px; }
 * { box-sizing:border-box; }
 [hidden], .hidden { display:none !important; }
-html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,sans-serif; }
-body { height:100dvh; display:flex; flex-direction:column; }
-button, textarea, select { font:inherit; }
-button, select { min-height:44px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--ink); padding:var(--space-1) var(--space-2); font-size:var(--small); cursor:pointer; }
+html,body { margin:0; width:100%; height:100%; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,sans-serif; }
+body { height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+button,select,textarea { font:inherit; }
+button,select { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--ink); min-height:30px; padding:3px 8px; cursor:pointer; }
 button:hover:not(:disabled) { border-color:var(--accent); }
 button:disabled { opacity:.5; cursor:default; }
-button.primary, button[aria-pressed="true"] { background:var(--accent); color:#101a2b; border-color:var(--accent); }
-:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
-header { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-1) var(--space-4); padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
-h1 { font-size:1.25rem; margin:0; }
-h2, p { margin:0; }
-h2 { font-size:1rem; }
-.brand { margin-right:auto; }
-.brand p, .muted { color:var(--muted); font-size:var(--small); }
-.actions { display:flex; gap:var(--space-1); flex-wrap:wrap; align-items:center; }
-#main { display:flex; flex:1; min-height:320px; }
-#editor { display:flex; flex-direction:column; width:clamp(300px,32vw,480px); border-right:1px solid var(--border); background:var(--editor); }
-.panel-head { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); }
-.panel-head label, .panel-head h2 { margin-right:auto; font-weight:600; }
-#src { flex:1; width:100%; min-height:180px; resize:none; border:0; padding:var(--space-3); background:var(--editor); color:var(--ink); font:0.875rem/1.7 ui-monospace,Consolas,monospace; tab-size:2; }
-#src:focus-visible { outline-offset:-3px; }
-#save-status, #example-note, #file-status { padding:var(--space-1) var(--space-3); font-size:var(--small); overflow-wrap:anywhere; }
-#save-status { color:var(--muted); }
-#example-note { color:var(--gold); }
-#preview { display:flex; flex-direction:column; flex:1; min-width:0; }
-#stage { flex:1; min-height:220px; overflow:hidden; position:relative; }
+button[data-attention="true"]::after { content:" •"; color:var(--err); }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+button[aria-expanded="true"] { border-color:var(--accent); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+h2,p { margin:0; }
+h2 { font-size:14px; }
+#controls { display:flex; gap:6px; align-items:center; flex:none; min-height:38px; padding:4px 8px; border-bottom:1px solid var(--border); background:var(--panel); overflow-x:auto; }
+#controls button { white-space:nowrap; flex:none; }
+.control-group { display:flex; gap:4px; align-items:center; flex:none; }
+.control-group + .control-group { padding-left:6px; border-left:1px solid var(--border); }
+#main { display:flex; flex:1; min-height:0; position:relative; }
+#preview { flex:1; min-width:0; position:relative; }
+#stage { width:100%; height:100%; overflow:hidden; touch-action:none; }
 #stage svg { width:100%; height:100%; display:block; }
-#stage .empty { padding:var(--space-4); color:var(--muted); }
-#status, #error-box { padding:var(--space-1) var(--space-3); border-bottom:1px solid var(--border); font-size:var(--small); overflow-wrap:anywhere; }
-#error-box { color:var(--err); }
-#err-details { max-height:140px; overflow:auto; white-space:pre-wrap; font:inherit; }
-summary { cursor:pointer; min-height:32px; }
-#trace { padding:var(--space-2) var(--space-3); border-top:1px solid var(--border); max-height:38vh; overflow:auto; }
-#trace-status { margin:var(--space-1) 0; overflow-wrap:anywhere; }
-#branches { display:flex; flex-wrap:wrap; gap:var(--space-1); }
-#branches button { text-align:left; white-space:normal; overflow-wrap:anywhere; max-width:100%; }
-#step-picker { max-width:100%; min-width:0; flex:1; }
-#help { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
-#help p { max-width:85ch; margin:var(--space-1) 0; }
-#mobile-views { display:none; padding:var(--space-1) var(--space-3); gap:var(--space-1); }
-.viewer .authoring, .viewer #editor { display:none !important; }
-#stage g.node, #stage g.edgePaths path, #stage g.edgeLabels g.edgeLabel { cursor:pointer; }
+#stage .empty { padding:24px; color:var(--muted); }
+.sidebar { display:flex; flex-direction:column; flex:none; width:260px; min-height:0; background:var(--panel); border-left:1px solid var(--border); }
+#editor { width:300px; border-left:0; border-right:1px solid var(--border); }
+.panel-head { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--border); }
+.panel-head label { font-weight:600; }
+.panel-content { padding:10px; overflow:auto; min-height:0; }
+.actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+#src { flex:1; min-height:100px; width:100%; resize:none; padding:12px; border:0; background:var(--bg); color:var(--ink); font:13px/1.65 ui-monospace,Consolas,monospace; }
+#src:focus-visible { outline-offset:-2px; }
+#save-status,#status,#file-status,#example-note { font-size:12px; color:var(--muted); padding:4px 10px; overflow-wrap:anywhere; }
+#file-actions { padding:8px 10px; }
+#trace-status { margin:10px 0; overflow-wrap:anywhere; }
+#branches { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
+#branches button { text-align:left; overflow-wrap:anywhere; }
+#step-picker { width:100%; min-width:0; margin-top:8px; }
+summary { cursor:pointer; padding:5px 0; }
+#help p { margin-bottom:12px; }
+#help code { color:var(--accent); overflow-wrap:anywhere; }
+#error-box { padding:8px 10px; color:var(--err); border-bottom:1px solid var(--border); font-size:13px; }
+#err-details { max-height:140px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 ui-monospace,monospace; }
+.viewer .authoring,.viewer #editor { display:none !important; }
+#stage g.node,#stage g.edgePaths path,#stage g.edgeLabels g.edgeLabel { cursor:pointer; }
 #stage g.edgeLabels g.edgeLabel * { pointer-events:auto; }
-#stage .edgeLabel span { color:var(--ink) !important; background-color:var(--panel) !important; }
-.dim { opacity:.6; }
+#stage .edgeLabel span { color:var(--ink) !important; background:var(--panel) !important; }
+.dim { opacity:.65; }
 g.node:focus { opacity:1; }
-g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--gold) !important; stroke-width:4px !important; }
-g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; stroke-dasharray:6 3; }
+g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; }
+g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--next) !important; stroke-width:2px !important; stroke-dasharray:5 3; }
 path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
-@media (max-width:700px) {
-  #mobile-views { display:flex; }
-  #toggle { display:none; }
-  #main { min-height:360px; }
-  #editor { width:100%; border-right:0; }
-  body[data-view="source"] #preview, body[data-view="preview"] #editor { display:none; }
-  body.viewer #preview { display:flex; }
-  body[data-view="source"]:not(.viewer) #editor.hidden { display:flex !important; }
-  #trace { max-height:42vh; }
-  header { padding:var(--space-1) var(--space-3); }
+#overview { position:absolute; right:10px; bottom:10px; width:190px; height:155px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); }
+#overview .panel-head { padding:3px 6px; }
+#overview-map { display:block; width:100%; height:120px; cursor:crosshair; touch-action:none; }
+#overview-window { fill:rgba(56,189,248,.12); stroke:var(--accent); stroke-width:2; vector-effect:non-scaling-stroke; pointer-events:none; }
+@media(max-width:1000px) {
+  .sidebar { position:absolute; top:0; bottom:0; right:0; z-index:5; width:min(300px,85vw); box-shadow:-4px 0 12px #0008; }
+  #editor { left:0; right:auto; }
+  button,select { min-height:44px; }
+  #controls { min-height:52px; }
 }
-@media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+@media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
 </style>
 </head>
-<body data-view="source">
-<header>
-  <div class="brand"><h1>Pathloom</h1><p>Offline Mermaid workspace</p></div>
-  <div class="actions">
-    <button id="toggle" class="authoring" aria-controls="editor" aria-expanded="true">Hide source</button>
-    <button id="export" class="authoring primary">Export viewer</button>
-    <button id="help-toggle" aria-controls="help" aria-expanded="false">Help</button>
+<body>
+<header id="controls" aria-label="Workspace controls">
+  <div class="control-group">
+    <button id="toggle" class="authoring" aria-controls="editor" aria-expanded="false">Source</button>
+    <button id="trace-toggle" aria-controls="trace" aria-expanded="false">Path</button>
+  </div>
+  <div class="control-group" role="group" aria-label="Canvas controls">
+    <button id="zin" aria-label="Zoom in" disabled>+</button><button id="zout" aria-label="Zoom out" disabled>−</button>
+    <button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
+    <button id="overview-toggle" aria-controls="overview" aria-expanded="false">Overview</button>
+  </div>
+  <div class="control-group">
+    <button id="export" class="authoring">Export viewer</button><button id="help-toggle" aria-controls="help" aria-expanded="false">Help</button>
   </div>
 </header>
-<section id="help" hidden aria-label="Workspace help">
-  <p><strong>Write a diagram.</strong> Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. Label a branch with <code>B -->|Yes| C[Done]</code>. Changes render automatically.</p>
-  <p><strong>Follow a path.</strong> Select a step in the diagram or the step list. Next follows one connection; at a decision, choose a labeled branch. Back retraces your path. Arrow keys navigate when the diagram has focus.</p>
-  <p><strong>Keep or share.</strong> Download source creates an editable .mmd file. Export viewer creates a validated, interactive HTML file anyone can open offline. Source saves in this browser when available; download a copy for safekeeping.</p>
-</section>
-<div id="mobile-views" class="authoring" role="group" aria-label="Workspace view">
-  <button id="source-view" aria-pressed="true" aria-controls="editor">Source</button>
-  <button id="preview-view" aria-pressed="false" aria-controls="preview">Preview</button>
-</div>
+<p id="notice" class="sr-only" role="status"></p>
 <main id="main">
-  <section id="editor" aria-label="Source editor">
-    <div class="panel-head"><label for="src">Mermaid source</label><button id="render">Render now</button></div>
-    <div class="panel-head actions">
-      <button id="open-source">Open Mermaid file</button><button id="download-source">Download source</button>
-      <button id="undo-import" hidden>Undo file replacement</button>
-      <input id="file-input" type="file" accept=".mmd,.mermaid,.txt,text/plain" hidden />
-    </div>
-    <p id="save-status" role="status"></p>
-    <p id="example-note">Example: workspace approval · Fictional people and companies</p>
+  <section id="editor" class="sidebar hidden" aria-label="Source editor">
+    <div class="panel-head"><label for="src">Mermaid source</label><button id="source-close" aria-label="Close source panel">×</button></div>
+    <div id="file-actions" class="actions"><button id="render">Render</button><button id="open-source">Open file</button><button id="download-source">Download source</button><button id="undo-import" hidden>Undo replacement</button><input id="file-input" type="file" accept=".mmd,.mermaid,.txt,text/plain" hidden /></div>
+    <p id="save-status" role="status"></p><p id="status" role="status">Rendering…</p>
+    <div id="error-box" hidden><p id="err" role="alert"></p><details><summary>Technical details</summary><pre id="err-details"></pre></details></div>
+    <details id="example-note"><summary>Example: workspace approval</summary><p>Fictional people and companies.</p></details>
     <p id="file-status" role="status" hidden></p>
     <textarea id="src" spellcheck="false" aria-describedby="save-status" aria-label="Mermaid source"></textarea>
   </section>
   <section id="preview" aria-label="Diagram preview">
-    <div class="panel-head"><h2>Preview</h2><div class="actions" role="group" aria-label="Canvas controls">
-      <button id="zin" disabled>Zoom in</button><button id="zout" disabled>Zoom out</button><button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
-    </div></div>
-    <p id="status" role="status">Rendering…</p>
-    <div id="error-box" hidden><p id="err" role="alert"></p><details><summary>Technical details</summary><pre id="err-details"></pre></details></div>
     <div id="stage" role="region" aria-label="Interactive diagram" tabindex="0"></div>
-    <section id="trace" aria-label="Follow a path">
-      <div class="actions"><h2>Follow a path</h2><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear trace</button></div>
-      <p id="trace-status" role="status">Select a step to begin.</p>
-      <div class="actions"><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></div>
-      <div id="branches" role="group" aria-label="Available next steps"></div>
-    </section>
+    <aside id="overview" hidden aria-label="Diagram overview"><div class="panel-head"><span>Overview</span><button id="overview-close" aria-label="Close overview">×</button></div><svg id="overview-map" role="img" aria-label="Diagram overview; click to pan"></svg></aside>
   </section>
+  <aside id="trace" class="sidebar hidden" aria-label="Follow a path">
+    <div class="panel-head"><h2>Follow a path</h2><button id="trace-close" aria-label="Close path panel">×</button></div>
+    <div class="panel-content">
+      <div class="actions"><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear</button></div>
+      <p id="trace-status" role="status">Select a step to begin.</p>
+      <div id="branches" role="group" aria-label="Available next steps"></div>
+      <details id="jump"><summary>Jump to step</summary><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></details>
+    </div>
+  </aside>
+  <aside id="help" class="sidebar hidden" aria-label="Workspace help">
+    <div class="panel-head"><h2>Help</h2><button id="help-close" aria-label="Close help panel">×</button></div>
+    <div class="panel-content">
+      <p><strong>Navigate.</strong> Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
+      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear removes selection without moving the view.</p>
+      <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
+      <p><strong>Write.</strong> Open Source. Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. A labeled branch looks like <code>B -->|Yes| C[Done]</code>.</p>
+      <p><strong>Keep or share.</strong> Download source saves editable Mermaid text. Export viewer validates and downloads an interactive offline HTML file. Download source for a portable backup.</p>
+    </div>
+  </aside>
 </main>
 <!-- SCRIPTS -->
 </body>

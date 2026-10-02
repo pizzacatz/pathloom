@@ -38,7 +38,12 @@ function saveSource() {
   byId("save-status").textContent = storageAvailable ? "Saved in this browser" : "Not saved in this browser · Download source to keep a copy";
   byId("example-note").hidden = srcEl.value !== DEFAULT_SRC;
 }
-function setStatus(message) { statusEl.textContent = message; }
+function setStatus(message) {
+  statusEl.textContent = message;
+  byId("toggle").title = message;
+  byId("toggle").dataset.attention = String(/out of date|No preview|Source is empty/.test(message));
+  byId("notice").textContent = message;
+}
 function clearError() {
   errEl.textContent = "";
   byId("err-details").textContent = "";
@@ -52,15 +57,48 @@ function showError(error, operation = "render") {
   byId("err-details").textContent = detail;
   byId("error-box").hidden = false;
   setStatus(lastRenderedSource === null ? "No preview available" : "Preview is out of date · Showing the last valid diagram");
+  if (VIEWER) {
+    byId("trace").querySelector(".panel-content").prepend(statusEl, byId("error-box"));
+    setPanel("trace", true);
+  } else setPanel("editor", true);
 }
-function showView(view) {
-  document.body.dataset.view = view;
-  byId("source-view").setAttribute("aria-pressed", String(view === "source"));
-  byId("preview-view").setAttribute("aria-pressed", String(view === "preview"));
-  requestAnimationFrame(resizeCanvas);
+const panelButtons = { editor: "toggle", trace: "trace-toggle", help: "help-toggle" };
+const PANEL_KEY = "pathloom.panels.v1";
+let animationFrame = null;
+function cancelFlyover() {
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+  animationFrame = null;
+  stage.removeAttribute("aria-busy");
 }
+function setPanel(id, open, returnFocus = false) {
+  cancelFlyover();
+  const panel = byId(id);
+  if (open && matchMedia("(max-width:1000px)").matches) {
+    Object.keys(panelButtons).filter(key => key !== id).forEach(key => {
+      byId(key).classList.add("hidden");
+      byId(panelButtons[key]).setAttribute("aria-expanded", "false");
+    });
+  }
+  panel.classList.toggle("hidden", !open);
+  byId(panelButtons[id]).setAttribute("aria-expanded", String(open));
+  if (returnFocus) byId(panelButtons[id]).focus();
+  if (!VIEWER) try {
+    localStorage.setItem(PANEL_KEY, JSON.stringify(Object.fromEntries(Object.keys(panelButtons).map(key => [key, !byId(key).classList.contains("hidden")]))));
+  } catch { /* Layout persistence is optional. */ }
+  resizeCanvas();
+}
+function showView(view) { if (view === "source") setPanel("editor", true); }
 srcEl.value = restoreSource();
-if (VIEWER) { document.body.classList.add("viewer"); document.body.dataset.view = "preview"; }
+if (VIEWER) document.body.classList.add("viewer");
+else try {
+  const panels = JSON.parse(localStorage.getItem(PANEL_KEY) || "{}");
+  for (const id of Object.keys(panelButtons)) {
+    if (panels[id] && (!matchMedia("(max-width:1000px)").matches || id === "editor")) {
+      byId(id).classList.remove("hidden");
+      byId(panelButtons[id]).setAttribute("aria-expanded", "true");
+    }
+  }
+} catch { /* Defaults give the canvas the full workspace. */ }
 saveSource();
 
 mermaid.initialize({ startOnLoad:false, theme:"dark", securityLevel:"strict",
@@ -73,7 +111,7 @@ function frame() {
     try {
       const p = VP.panZoom.getPan(), z = VP.panZoom.getZoom();
       const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y);
-      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); }
+      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); updateOverview(); }
     } catch (e) { /* ignore between renders */ }
   }
   requestAnimationFrame(frame);
@@ -83,6 +121,7 @@ requestAnimationFrame(frame);
 let _panZoom = null, _rid = 0;
 
 async function renderGraph() {
+  cancelFlyover();
   const src = srcEl.value;
   const requestId = ++_rid;
   saveSource();
@@ -119,6 +158,7 @@ async function renderGraph() {
   if (!stage.clientWidth || !stage.clientHeight) { pendingPreview = true; return false; }
   const savedView = captureView();
 
+  cancelFlyover();
   VP = null;
   if (_panZoom) { try { _panZoom.destroy(); } catch (e) {} _panZoom = null; }
   stage.innerHTML = svg;
@@ -133,6 +173,7 @@ async function renderGraph() {
     fit:true, center:true, minZoom:0.2, maxZoom:12, zoomScaleSensitivity:0.35 });
   _panZoom = panZoom;
   if (savedView) restoreView(savedView);
+  buildOverview(svgEl);
   lastRenderedSource = src;
   setStatus("Preview up to date");
   ["zin", "zout", "fit", "onehundred"].forEach(id => byId(id).disabled = false);
@@ -217,13 +258,67 @@ async function renderGraph() {
       .forEach(e => e.classList.remove("hl-cur","hl-next","hl-edge","dim"));
   }
   function centerOn(el) {
+    // Move only when the selected node is outside a comfortable visible margin.
     try {
       const sr = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
-      const dx = (sr.left + sr.width/2) - (r.left + r.width/2);
-      const dy = (sr.top + sr.height/2) - (r.top + r.height/2);
+      const margin = 24;
+      const dx = r.width > sr.width - margin * 2 ? sr.left + sr.width/2 - (r.left + r.width/2)
+        : r.left < sr.left + margin ? sr.left + margin - r.left
+        : r.right > sr.right - margin ? sr.right - margin - r.right : 0;
+      const dy = r.height > sr.height - margin * 2 ? sr.top + sr.height/2 - (r.top + r.height/2)
+        : r.top < sr.top + margin ? sr.top + margin - r.top
+        : r.bottom > sr.bottom - margin ? sr.bottom - margin - r.bottom : 0;
       const ctm = svgEl.getScreenCTM();
       panZoom.panBy({ x: dx / ctm.a, y: dy / ctm.d });
-    } catch (e) {}
+    } catch { /* A selected node still has a text equivalent. */ }
+  }
+  function flyTo(edge) {
+    cancelFlyover();
+    if (matchMedia("(prefers-reduced-motion:reduce)").matches) { go(edge.end); return; }
+    try {
+      const len = edge.path.getTotalLength();
+      const inverse = viewport.getCTM().inverse();
+      const transforms = new Map([edge.path, nodeEls[edge.start], nodeEls[edge.end]].map(element => [element, inverse.multiply(element.getCTM())]));
+      const toContent = (element, point) => {
+        const svgPoint = svgEl.createSVGPoint();
+        svgPoint.x = point.x; svgPoint.y = point.y;
+        return svgPoint.matrixTransform(transforms.get(element));
+      };
+      const nodeCenter = key => {
+        const box = nodeEls[key].getBBox();
+        return toContent(nodeEls[key], { x: box.x + box.width/2, y: box.y + box.height/2 });
+      };
+      const view = captureView();
+      const start = nodeCenter(edge.start), end = nodeCenter(edge.end);
+      const at = fraction => {
+        // Include node centers at each end, with most of the trip on the actual curve.
+        if (fraction < .08) {
+          const first = toContent(edge.path, edge.path.getPointAtLength(0));
+          return { x: start.x + (first.x-start.x)*fraction/.08, y: start.y + (first.y-start.y)*fraction/.08 };
+        }
+        if (fraction > .92) {
+          const last = toContent(edge.path, edge.path.getPointAtLength(len));
+          return { x: last.x + (end.x-last.x)*(fraction-.92)/.08, y: last.y + (end.y-last.y)*(fraction-.92)/.08 };
+        }
+        return toContent(edge.path, edge.path.getPointAtLength((fraction-.08)/.84*len));
+      };
+      if (!view || !len) { go(edge.end); return; }
+      // Keep the camera's initial offset and dissolve it as it follows the line.
+      const offset = { x: view.x-start.x, y: view.y-start.y };
+      const begun = performance.now();
+      stage.setAttribute("aria-busy", "true");
+      function tick(now) {
+        const t = Math.min(1, (now-begun)/500);
+        const progress = t*t*(3-2*t);
+        const point = at(progress);
+        const sizes = panZoom.getSizes();
+        panZoom.pan({ x: sizes.width/2-(point.x+offset.x*(1-progress))*view.scale,
+          y: sizes.height/2-(point.y+offset.y*(1-progress))*view.scale });
+        if (t < 1) animationFrame = requestAnimationFrame(tick);
+        else { animationFrame = null; stage.removeAttribute("aria-busy"); go(edge.end, true, false); }
+      }
+      animationFrame = requestAnimationFrame(tick);
+    } catch { cancelFlyover(); go(edge.end); }
   }
   function focus(key, center = true) {
     if (!nodeEls[key]) return;
@@ -270,9 +365,10 @@ async function renderGraph() {
     });
     if (hadBranchFocus) (branches.querySelector("button") || picker).focus();
   }
-  function go(key, record) { if (!nodeEls[key]) return;
+  function go(key, record, reveal = true) { if (!nodeEls[key]) return;
+    cancelFlyover();
     if (record !== false && current && current !== key) history.push(current);
-    current = key; focus(key); updateTraceControls(); }
+    current = key; focus(key, reveal); updateTraceControls(); }
   function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(nodeEls)[0]; if (first) go(first); return; }
     const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
   function stepBack() { if (history.length) go(history.pop(), false); }
@@ -291,29 +387,49 @@ async function renderGraph() {
   edgeEls.forEach((p, i) => {
     const hit = tracedEdges.find(e => e.path === p);
     if (!hit) return;
-    const jump = ev => { ev.stopPropagation(); go(hit.end); };
+    const jump = ev => { ev.stopPropagation(); flyTo(hit); };
     p.addEventListener("click", jump);
+    const hitArea = p.cloneNode(false);
+    hitArea.removeAttribute("id");
+    hitArea.removeAttribute("marker-start"); hitArea.removeAttribute("marker-end");
+    hitArea.removeAttribute("style");
+    hitArea.setAttribute("class", "edge-hit");
+    hitArea.setAttribute("fill", "none");
+    hitArea.setAttribute("stroke", "transparent");
+    hitArea.setAttribute("stroke-width", "12");
+    hitArea.setAttribute("vector-effect", "non-scaling-stroke");
+    hitArea.setAttribute("pointer-events", "stroke");
+    hitArea.setAttribute("aria-hidden", "true");
+    hitArea.addEventListener("click", jump);
+    p.after(hitArea);
     if (aligned && labelEls[i]) labelEls[i].addEventListener("click", jump);
   });
 
-  document.getElementById("zin").onclick   = () => panZoom.zoomIn();
-  document.getElementById("zout").onclick  = () => panZoom.zoomOut();
-  document.getElementById("fit").onclick   = () => { panZoom.resize(); panZoom.fit(); panZoom.center(); };
+  document.getElementById("zin").onclick   = () => { cancelFlyover(); panZoom.zoomIn(); };
+  document.getElementById("zout").onclick  = () => { cancelFlyover(); panZoom.zoomOut(); };
+  document.getElementById("fit").onclick   = () => { cancelFlyover(); panZoom.resize(); panZoom.fit(); panZoom.center(); };
   document.getElementById("onehundred").onclick = () => {
+    cancelFlyover();
     const rz = panZoom.getSizes().realZoom;
     if (rz > 0) panZoom.zoomBy(1 / rz);
     if (current && nodeEls[current]) centerOn(nodeEls[current]);
   };
   document.getElementById("back").onclick  = () => stepBack();
   document.getElementById("next").onclick  = () => stepNext();
-  document.getElementById("reset").onclick = () => { clearHL(); current = null; history.length = 0;
+  document.getElementById("reset").onclick = () => { cancelFlyover(); clearHL(); current = null; history.length = 0;
     Object.values(nodeEls).forEach(node => node.setAttribute("aria-pressed", "false")); updateTraceControls(); };
   document.onkeydown = ev => {
     if (!stage.contains(document.activeElement)) return;   // don't hijack typing in the editor
     if (ev.key === "ArrowRight" || ev.key === "ArrowDown") { ev.preventDefault(); stepNext(); }
     else if (ev.key === "ArrowLeft" || ev.key === "ArrowUp") { ev.preventDefault(); stepBack(); }
+    else {
+      const control = { f:"fit", F:"fit", "+":"zin", "=":"zin", "-":"zout", "0":"onehundred" }[ev.key];
+      if (control) { ev.preventDefault(); byId(control).click(); }
+    }
   };
 
+  stage.onpointerdown = cancelFlyover;
+  stage.onwheel = cancelFlyover;
   VP = { panZoom: panZoom, relayout: relayoutLabels, lastKey: "" };
   try { relayoutLabels(); } catch { /* Optional geometry enhancement. */ }
   if (current) focus(current, false);
@@ -335,6 +451,7 @@ function restoreView(view) {
   _panZoom.pan({ x: sizes.width / 2 - view.x * view.scale, y: sizes.height / 2 - view.y * view.scale });
 }
 function resizeCanvas() {
+  cancelFlyover();
   if (pendingPreview && stage.clientWidth && stage.clientHeight) { clearTimeout(_typeTimer); renderGraph(); return; }
   if (!_panZoom || !stage.clientWidth || !stage.clientHeight) return;
   const view = captureView();
@@ -342,24 +459,75 @@ function resizeCanvas() {
   if (view) restoreView(view);
 }
 byId("render").onclick = () => { clearTimeout(_typeTimer); renderGraph(); };
-byId("toggle").onclick = () => {
-  const hidden = byId("editor").classList.toggle("hidden");
-  byId("toggle").setAttribute("aria-expanded", String(!hidden));
-  byId("toggle").textContent = hidden ? "Show source" : "Hide source";
-  resizeCanvas();
+for (const [panel, button] of Object.entries(panelButtons)) {
+  byId(button).onclick = () => setPanel(panel, byId(panel).classList.contains("hidden"));
+}
+byId("source-close").onclick = () => setPanel("editor", false, true);
+byId("trace-close").onclick = () => setPanel("trace", false, true);
+byId("help-close").onclick = () => setPanel("help", false, true);
+function toggleOverview(open) {
+  byId("overview").hidden = !open;
+  byId("overview-toggle").setAttribute("aria-expanded", String(open));
+  updateOverview();
+}
+byId("overview-toggle").onclick = () => toggleOverview(byId("overview").hidden);
+byId("overview-close").onclick = () => { toggleOverview(false); byId("overview-toggle").focus(); };
+let overviewBox = null;
+function buildOverview(svg) {
+  const map = byId("overview-map");
+  map.replaceChildren();
+  const content = svg.querySelector(".svg-pan-zoom_viewport");
+  if (!content) return;
+  const copy = content.cloneNode(true);
+  copy.removeAttribute("transform");
+  copy.style.removeProperty("transform");
+  copy.querySelectorAll("style").forEach(style => { style.textContent = style.textContent.replaceAll("#" + svg.id, "#overview-map"); });
+  copy.removeAttribute("id");
+  copy.querySelectorAll("[tabindex], [role], [aria-pressed]").forEach(el => {
+    el.removeAttribute("tabindex"); el.removeAttribute("role"); el.removeAttribute("aria-pressed");
+  });
+  // Prefix IDs and their references to keep markers and styles isolated from the main SVG.
+  copy.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id);
+  const defs = svg.querySelector("defs")?.cloneNode(true);
+  if (defs) { defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs); }
+  for (const root of [copy, defs].filter(Boolean)) root.querySelectorAll("*").forEach(el => {
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.value.includes("url(#")) el.setAttribute(attr.name, attr.value.replace(/url\(#/g, "url(#overview-"));
+    }
+  });
+  map.append(copy);
+  overviewBox = content.getBBox();
+  const { x,y,width,height } = overviewBox;
+  map.setAttribute("viewBox", `${x-8} ${y-8} ${width+16} ${height+16}`);
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.id = "overview-window"; map.append(rect);
+  updateOverview();
+}
+function updateOverview() {
+  if (byId("overview").hidden || !overviewBox) return;
+  const view = captureView(), rect = byId("overview-window");
+  if (!view || !rect) return;
+  const { width,height } = _panZoom.getSizes();
+  for (const [name,value] of Object.entries({ x:view.x-width/view.scale/2, y:view.y-height/view.scale/2,
+    width:width/view.scale, height:height/view.scale })) rect.setAttribute(name, value);
+}
+byId("overview-map").onclick = event => {
+  if (!_panZoom) return;
+  cancelFlyover();
+  const map = byId("overview-map"), point = map.createSVGPoint();
+  point.x = event.clientX; point.y = event.clientY;
+  const target = point.matrixTransform(map.getScreenCTM().inverse());
+  const view = captureView();
+  if (view) restoreView({ ...view, x:target.x, y:target.y });
 };
-byId("source-view").onclick = () => {
-  byId("editor").classList.remove("hidden");
-  byId("toggle").setAttribute("aria-expanded", "true");
-  byId("toggle").textContent = "Hide source";
-  showView("source");
-};
-byId("preview-view").onclick = () => showView("preview");
-byId("help-toggle").onclick = () => {
-  byId("help").hidden = !byId("help").hidden;
-  byId("help-toggle").setAttribute("aria-expanded", String(!byId("help").hidden));
-  resizeCanvas();
-};
+window.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  cancelFlyover();
+  const open = Object.keys(panelButtons).filter(id => !byId(id).classList.contains("hidden"));
+  const panel = open.find(id => byId(id).contains(document.activeElement)) || open.at(-1);
+  if (panel) { setPanel(panel, false, true); event.preventDefault(); }
+  else if (!byId("overview").hidden) { toggleOverview(false); byId("overview-toggle").focus(); }
+});
 function download(contents, type, name) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const a = document.createElement("a");
@@ -385,6 +553,7 @@ byId("export").onclick = async () => {
     clone.querySelector("body").classList.add("viewer");
     clone.querySelector("body").dataset.view = "preview";
     clone.querySelector("#stage").replaceChildren();
+    clone.querySelector("#overview-map").replaceChildren();
     clone.querySelector("#src").textContent = "";
     clone.querySelector("#file-status").textContent = "";
     clone.querySelector("#save-status").textContent = "";
@@ -433,6 +602,7 @@ byId("undo-import").onclick = () => {
 };
 let _typeTimer = null;
 function sourceChanged() {
+  cancelFlyover();
   saveSource(); ++_rid;
   setStatus(lastRenderedSource === null ? "Changes pending · No preview yet" : "Changes pending · Preview is out of date");
   clearTimeout(_typeTimer);
