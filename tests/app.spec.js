@@ -414,3 +414,48 @@ test('overview can be collapsed and used to pan without changing zoom', async ({
   await page.locator('#overview-close').click();
   await expect(page.locator('#overview')).toBeHidden();
 });
+
+test('Start centers the first entry step at actual size and Clear view restores all text', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page, 'flowchart TD\nZ[Finish]\nA[First step] --> B[Middle] --> Z');
+  await page.locator('#start').click();
+  await expect(page.locator('#stage .hl-cur')).toContainText('First step');
+  expect(await page.evaluate(() => _panZoom.getSizes().realZoom)).toBeCloseTo(1, 4);
+  const centered = await page.evaluate(() => {
+    const node = stage.querySelector('.hl-cur').getBoundingClientRect(), canvas = stage.getBoundingClientRect();
+    return { x:node.left+node.width/2-canvas.left-canvas.width/2, y:node.top+node.height/2-canvas.top-canvas.height/2 };
+  });
+  expect(Math.abs(centered.x)).toBeLessThan(2);
+  expect(Math.abs(centered.y)).toBeLessThan(2);
+  await expect(page.locator('#stage .dim')).not.toHaveCount(0);
+  const before = await page.evaluate(() => captureView());
+  await page.locator('#reset').click();
+  await expect(page.locator('#stage .dim, #stage .hl-cur, #stage .hl-next, #stage .hl-edge')).toHaveCount(0);
+  expect(await page.evaluate(() => captureView())).toEqual(before);
+  await render(page, 'flowchart TD\n' + Array.from({ length: 160 }, (_, i) => `N${i}[Step ${i}] --> N${i+1}`).join('\n'));
+  await page.locator('#start').click();
+  await expect(page.locator('#stage .hl-cur')).toContainText('Step 0');
+  expect(await page.evaluate(() => _panZoom.getSizes().realZoom)).toBeCloseTo(1, 4);
+});
+
+test('all sidebars and the overview open on the left', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(appURL);
+  await expect(page.locator('#stage svg')).toHaveCount(1);
+  await openSource(page);
+  await openPath(page);
+  await page.locator('#help-toggle').click();
+  const canvas = await page.locator('#stage').boundingBox();
+  for (const id of ['editor', 'trace', 'help']) {
+    const panel = await page.locator('#' + id).boundingBox();
+    expect(panel.x + panel.width).toBeLessThanOrEqual(canvas.x);
+  }
+  await page.locator('#overview-toggle').click();
+  expect((await page.locator('#overview').boundingBox()).x).toBe(canvas.x + 10);
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const id of ['editor', 'trace', 'help']) {
+    await page.locator('#' + ({ editor:'toggle', trace:'trace-toggle', help:'help-toggle' }[id])).click();
+    if (await page.locator('#' + id).isHidden()) await page.locator('#' + ({ editor:'toggle', trace:'trace-toggle', help:'help-toggle' }[id])).click();
+    expect((await page.locator('#' + id).boundingBox()).x).toBe(0);
+  }
+});

@@ -369,7 +369,9 @@ async function renderGraph() {
     cancelFlyover();
     if (record !== false && current && current !== key) history.push(current);
     current = key; focus(key, reveal); updateTraceControls(); }
-  function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(nodeEls)[0]; if (first) go(first); return; }
+  const firstNode = Object.keys(nodeEls).find(key => !graph.some(edge => edge.end === key && nodeEls[edge.start])) || Object.keys(nodeEls)[0];
+  byId("start").disabled = !firstNode;
+  function stepNext() { if (!current) { if (firstNode) go(firstNode); return; }
     const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
   function stepBack() { if (history.length) go(history.pop(), false); }
 
@@ -408,11 +410,31 @@ async function renderGraph() {
   document.getElementById("zin").onclick   = () => { cancelFlyover(); panZoom.zoomIn(); };
   document.getElementById("zout").onclick  = () => { cancelFlyover(); panZoom.zoomOut(); };
   document.getElementById("fit").onclick   = () => { cancelFlyover(); panZoom.resize(); panZoom.fit(); panZoom.center(); };
-  document.getElementById("onehundred").onclick = () => {
+  function actualSize() {
     cancelFlyover();
     const rz = panZoom.getSizes().realZoom;
-    if (rz > 0) panZoom.zoomBy(1 / rz);
+    if (rz > 0) {
+      const target = panZoom.getZoom() / rz;
+      // Large diagrams can require a relative zoom beyond the default fit-based limit.
+      panZoom.setMaxZoom(Math.max(12, target));
+      panZoom.setMinZoom(Math.min(.2, target));
+      panZoom.zoom(target);
+    }
+  }
+  byId("onehundred").onclick = () => {
+    actualSize();
     if (current && nodeEls[current]) centerOn(nodeEls[current]);
+  };
+  byId("start").onclick = () => {
+    if (!firstNode) return;
+    actualSize();
+    history.length = 0;
+    go(firstNode, false, false);
+    const node = nodeEls[firstNode], box = node.getBBox(), point = svgEl.createSVGPoint();
+    point.x = box.x + box.width/2; point.y = box.y + box.height/2;
+    const center = point.matrixTransform(node.getCTM()).matrixTransform(viewport.getCTM().inverse());
+    const sizes = panZoom.getSizes();
+    panZoom.pan({ x:sizes.width/2-center.x*sizes.realZoom, y:sizes.height/2-center.y*sizes.realZoom });
   };
   document.getElementById("back").onclick  = () => stepBack();
   document.getElementById("next").onclick  = () => stepNext();

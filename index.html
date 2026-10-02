@@ -29,7 +29,7 @@ h2 { font-size:14px; }
 #stage { width:100%; height:100%; overflow:hidden; touch-action:none; }
 #stage svg { width:100%; height:100%; display:block; }
 #stage .empty { padding:24px; color:var(--muted); }
-.sidebar { display:flex; flex-direction:column; flex:none; width:260px; min-height:0; background:var(--panel); border-left:1px solid var(--border); }
+.sidebar { display:flex; flex-direction:column; flex:none; width:260px; min-height:0; background:var(--panel); border-right:1px solid var(--border); }
 #editor { width:300px; border-left:0; border-right:1px solid var(--border); }
 .panel-head { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--border); }
 .panel-head label { font-weight:600; }
@@ -57,12 +57,12 @@ g.node:focus { opacity:1; }
 g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; }
 g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--next) !important; stroke-width:2px !important; stroke-dasharray:5 3; }
 path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
-#overview { position:absolute; right:10px; bottom:10px; width:190px; height:155px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); }
+#overview { position:absolute; left:10px; bottom:10px; width:190px; height:155px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); }
 #overview .panel-head { padding:3px 6px; }
 #overview-map { display:block; width:100%; height:120px; cursor:crosshair; touch-action:none; }
 #overview-window { fill:rgba(56,189,248,.12); stroke:var(--accent); stroke-width:2; vector-effect:non-scaling-stroke; pointer-events:none; }
 @media(max-width:1000px) {
-  .sidebar { position:absolute; top:0; bottom:0; right:0; z-index:5; width:min(300px,85vw); box-shadow:-4px 0 12px #0008; }
+  .sidebar { position:absolute; top:0; bottom:0; left:0; z-index:5; width:min(300px,85vw); box-shadow:4px 0 12px #0008; }
   #editor { left:0; right:auto; }
   button,select { min-height:44px; }
   #controls { min-height:52px; }
@@ -77,6 +77,7 @@ path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
     <button id="trace-toggle" aria-controls="trace" aria-expanded="false">Path</button>
   </div>
   <div class="control-group" role="group" aria-label="Canvas controls">
+    <button id="start" disabled>Start</button><button id="reset" disabled>Clear view</button>
     <button id="zin" aria-label="Zoom in" disabled>+</button><button id="zout" aria-label="Zoom out" disabled>−</button>
     <button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
     <button id="overview-toggle" aria-controls="overview" aria-expanded="false">Overview</button>
@@ -96,14 +97,10 @@ path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
     <p id="file-status" role="status" hidden></p>
     <textarea id="src" spellcheck="false" aria-describedby="save-status" aria-label="Mermaid source"></textarea>
   </section>
-  <section id="preview" aria-label="Diagram preview">
-    <div id="stage" role="region" aria-label="Interactive diagram" tabindex="0"></div>
-    <aside id="overview" hidden aria-label="Diagram overview"><div class="panel-head"><span>Overview</span><button id="overview-close" aria-label="Close overview">×</button></div><svg id="overview-map" role="img" aria-label="Diagram overview; click to pan"></svg></aside>
-  </section>
   <aside id="trace" class="sidebar hidden" aria-label="Follow a path">
     <div class="panel-head"><h2>Follow a path</h2><button id="trace-close" aria-label="Close path panel">×</button></div>
     <div class="panel-content">
-      <div class="actions"><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear</button></div>
+      <div class="actions"><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button></div>
       <p id="trace-status" role="status">Select a step to begin.</p>
       <div id="branches" role="group" aria-label="Available next steps"></div>
       <details id="jump"><summary>Jump to step</summary><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></details>
@@ -112,13 +109,17 @@ path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
   <aside id="help" class="sidebar hidden" aria-label="Workspace help">
     <div class="panel-head"><h2>Help</h2><button id="help-close" aria-label="Close help panel">×</button></div>
     <div class="panel-content">
-      <p><strong>Navigate.</strong> Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
-      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear removes selection without moving the view.</p>
-      <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
+      <p><strong>Navigate.</strong> Start jumps to the first step at actual size. Clear view removes dimming and highlighting without moving the camera. Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
+      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear view removes selection without moving the view.</p>
+      <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently on the left. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
       <p><strong>Write.</strong> Open Source. Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. A labeled branch looks like <code>B -->|Yes| C[Done]</code>.</p>
       <p><strong>Keep or share.</strong> Download source saves editable Mermaid text. Export viewer validates and downloads an interactive offline HTML file. Download source for a portable backup.</p>
     </div>
   </aside>
+  <section id="preview" aria-label="Diagram preview">
+    <div id="stage" role="region" aria-label="Interactive diagram" tabindex="0"></div>
+    <aside id="overview" hidden aria-label="Diagram overview"><div class="panel-head"><span>Overview</span><button id="overview-close" aria-label="Close overview">×</button></div><svg id="overview-map" role="img" aria-label="Diagram overview; click to pan"></svg></aside>
+  </section>
 </main>
 <script>
 (function(ZM,Dg){typeof exports=="object"&&typeof module<"u"?module.exports=Dg():typeof define=="function"&&define.amd?define(Dg):(ZM=typeof globalThis<"u"?globalThis:ZM||self,ZM.mermaid=Dg())})(this,function(){var dYe,gYe;"use strict";function ZM(i){for(var a=[],u=1;u<arguments.length;u++)a[u-1]=arguments[u];var d=Array.from(typeof i=="string"?[i]:i);d[d.length-1]=d[d.length-1].replace(/\r?\n([\t ]*)$/,"");var p=d.reduce(function(y,E){var _=E.match(/\n([\t ]+|(?!\s).)/g);return _?y.concat(_.map(function(A){var P,R;return(R=(P=A.match(/[\t ]/g))===null||P===void 0?void 0:P.length)!==null&&R!==void 0?R:0})):y},[]);if(p.length){var v=new RegExp(`
@@ -2525,7 +2526,9 @@ async function renderGraph() {
     cancelFlyover();
     if (record !== false && current && current !== key) history.push(current);
     current = key; focus(key, reveal); updateTraceControls(); }
-  function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(nodeEls)[0]; if (first) go(first); return; }
+  const firstNode = Object.keys(nodeEls).find(key => !graph.some(edge => edge.end === key && nodeEls[edge.start])) || Object.keys(nodeEls)[0];
+  byId("start").disabled = !firstNode;
+  function stepNext() { if (!current) { if (firstNode) go(firstNode); return; }
     const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
   function stepBack() { if (history.length) go(history.pop(), false); }
 
@@ -2564,11 +2567,31 @@ async function renderGraph() {
   document.getElementById("zin").onclick   = () => { cancelFlyover(); panZoom.zoomIn(); };
   document.getElementById("zout").onclick  = () => { cancelFlyover(); panZoom.zoomOut(); };
   document.getElementById("fit").onclick   = () => { cancelFlyover(); panZoom.resize(); panZoom.fit(); panZoom.center(); };
-  document.getElementById("onehundred").onclick = () => {
+  function actualSize() {
     cancelFlyover();
     const rz = panZoom.getSizes().realZoom;
-    if (rz > 0) panZoom.zoomBy(1 / rz);
+    if (rz > 0) {
+      const target = panZoom.getZoom() / rz;
+      // Large diagrams can require a relative zoom beyond the default fit-based limit.
+      panZoom.setMaxZoom(Math.max(12, target));
+      panZoom.setMinZoom(Math.min(.2, target));
+      panZoom.zoom(target);
+    }
+  }
+  byId("onehundred").onclick = () => {
+    actualSize();
     if (current && nodeEls[current]) centerOn(nodeEls[current]);
+  };
+  byId("start").onclick = () => {
+    if (!firstNode) return;
+    actualSize();
+    history.length = 0;
+    go(firstNode, false, false);
+    const node = nodeEls[firstNode], box = node.getBBox(), point = svgEl.createSVGPoint();
+    point.x = box.x + box.width/2; point.y = box.y + box.height/2;
+    const center = point.matrixTransform(node.getCTM()).matrixTransform(viewport.getCTM().inverse());
+    const sizes = panZoom.getSizes();
+    panZoom.pan({ x:sizes.width/2-center.x*sizes.realZoom, y:sizes.height/2-center.y*sizes.realZoom });
   };
   document.getElementById("back").onclick  = () => stepBack();
   document.getElementById("next").onclick  = () => stepNext();
