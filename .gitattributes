@@ -1,0 +1,4 @@
+# Generated output and inherited bundles retain upstream whitespace verbatim.
+index.html linguist-generated=true -whitespace
+flowchart.html linguist-generated=true -whitespace
+vendor/*.js linguist-vendored=true -whitespace
