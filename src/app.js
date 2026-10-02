@@ -16,31 +16,52 @@ const errEl = document.getElementById("err");
 const KEY = "pathloom.source.v1";
 const statusEl = document.getElementById("status");
 let storageAvailable = true;
+let lastRenderedSource = null;
+let pendingPreview = false;
+let traceState = { current: null, history: [] };
+let previousFile = null;
+let downloadedSource = null;
 const BAKED_SRC = window.__FLOWCHART_SRC__ ?? null;
-const VIEWER = !!(typeof window !== "undefined" && window.__FLOWCHART_VIEWER__);
+const VIEWER = !!window.__FLOWCHART_VIEWER__;
+const byId = id => document.getElementById(id);
 function restoreSource() {
   if (VIEWER) return BAKED_SRC ?? DEFAULT_SRC;
   try {
-    // Remove the legacy workspace draft; never migrate identifying content.
     localStorage.removeItem("mermaid_studio_src");
     return localStorage.getItem(KEY) ?? DEFAULT_SRC;
   } catch { storageAvailable = false; return DEFAULT_SRC; }
 }
 function saveSource() {
   if (VIEWER) return;
-  try { localStorage.setItem(KEY, srcEl.value); }
+  try { localStorage.setItem(KEY, srcEl.value); storageAvailable = true; }
   catch { storageAvailable = false; }
+  byId("save-status").textContent = storageAvailable ? "Saved in this browser" : "Not saved in this browser · Download source to keep a copy";
+  byId("example-note").hidden = srcEl.value !== DEFAULT_SRC;
 }
-function setStatus(message) {
-  statusEl.textContent = message + (!VIEWER && !storageAvailable ? " · Local saving unavailable" : "");
+function setStatus(message) { statusEl.textContent = message; }
+function clearError() {
+  errEl.textContent = "";
+  byId("err-details").textContent = "";
+  byId("error-box").hidden = true;
+}
+function showError(error, operation = "render") {
+  const detail = String(error?.message || error);
+  const line = detail.match(/line\s+(\d+)/i);
+  errEl.textContent = (operation === "export" ? "Viewer not exported. " : "Unable to render. ") +
+    (VIEWER ? "Ask the author for a corrected viewer." : `Check the Mermaid syntax${line ? " near line " + line[1] : ""}, then try again.`);
+  byId("err-details").textContent = detail;
+  byId("error-box").hidden = false;
+  setStatus(lastRenderedSource === null ? "No preview available" : "Preview is out of date · Showing the last valid diagram");
+}
+function showView(view) {
+  document.body.dataset.view = view;
+  byId("source-view").setAttribute("aria-pressed", String(view === "source"));
+  byId("preview-view").setAttribute("aria-pressed", String(view === "preview"));
+  requestAnimationFrame(resizeCanvas);
 }
 srcEl.value = restoreSource();
-if (VIEWER) {
-  document.getElementById("editor").classList.add("hidden");
-  ["render","toggle","export"].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = "none"; });
-  const h = document.getElementById("hint");
-  if (h) h.textContent = "Click node, line, or label to trace · Next or arrow keys advance · double-click for 100%";
-}
+if (VIEWER) { document.body.classList.add("viewer"); document.body.dataset.view = "preview"; }
+saveSource();
 
 mermaid.initialize({ startOnLoad:false, theme:"dark", securityLevel:"strict",
   flowchart:{ useMaxWidth:false, htmlLabels:true } });
@@ -65,8 +86,19 @@ async function renderGraph() {
   const src = srcEl.value;
   const requestId = ++_rid;
   saveSource();
-  errEl.textContent = "";
-  setStatus("Rendering…");
+  clearError();
+  if (!src.trim()) {
+    setStatus(lastRenderedSource === null ? "Start a diagram · Enter Mermaid source to see a preview" : "Source is empty · Showing the last valid diagram");
+    if (lastRenderedSource === null) stage.innerHTML = '<p class="empty">Start with flowchart TD, then connect two steps: A --> B. Open Help for an example.</p>';
+    return false;
+  }
+  if (!stage.clientWidth || !stage.clientHeight) {
+    pendingPreview = true;
+    setStatus("Preview will update when opened");
+    return false;
+  }
+  pendingPreview = false;
+  setStatus(lastRenderedSource === null ? "Rendering…" : "Rendering… · Previous preview remains visible");
 
   let svg, graph;
   try {
@@ -80,11 +112,12 @@ async function renderGraph() {
   } catch (e) {
     if (requestId !== _rid) return;
     document.getElementById("dstudioGraph" + requestId)?.remove();
-    setStatus("Unable to render · Showing the last valid diagram");
-    // Keep the last good diagram; just report the error.
-    errEl.textContent = "Render error: " + (e && e.message ? e.message : e);
-    return;
+    showError(e);
+    return false;
   }
+
+  if (!stage.clientWidth || !stage.clientHeight) { pendingPreview = true; return false; }
+  const savedView = captureView();
 
   VP = null;
   if (_panZoom) { try { _panZoom.destroy(); } catch (e) {} _panZoom = null; }
@@ -99,6 +132,10 @@ async function renderGraph() {
     dblClickZoomEnabled:false,
     fit:true, center:true, minZoom:0.2, maxZoom:12, zoomScaleSensitivity:0.35 });
   _panZoom = panZoom;
+  if (savedView) restoreView(savedView);
+  lastRenderedSource = src;
+  setStatus("Preview up to date");
+  ["zin", "zout", "fit", "onehundred"].forEach(id => byId(id).disabled = false);
 
   // double-click normalizes to 100% at the pointer -- never past 100%, no compounding
   stage.ondblclick = (ev) => {
@@ -188,7 +225,7 @@ async function renderGraph() {
       panZoom.panBy({ x: dx / ctm.a, y: dy / ctm.d });
     } catch (e) {}
   }
-  function focus(key) {
+  function focus(key, center = true) {
     if (!nodeEls[key]) return;
     clearHL();
     Object.values(nodeEls).forEach(e => e.classList.add("dim"));
@@ -199,28 +236,51 @@ async function renderGraph() {
       if (nodeEls[t]) { nodeEls[t].classList.remove("dim"); nodeEls[t].classList.add("hl-next"); }
       findEdges(key, t).forEach(ed => { ed.classList.remove("dim"); ed.classList.add("hl-edge"); });
     });
-    centerOn(cur);
+    Object.entries(nodeEls).forEach(([id, node]) => node.setAttribute("aria-pressed", String(id === key)));
+    if (center) centerOn(cur);
   }
 
   // ---- stepper ----
-  let current = null; const history = [];
+  let current = nodeEls[traceState.current] ? traceState.current : null;
+  const history = traceState.history.filter(key => nodeEls[key]);
+  const picker = byId("step-picker");
+  picker.replaceChildren(new Option("Select a step", ""));
+  Object.entries(nodeEls).forEach(([key, node]) => picker.add(new Option(node.textContent.trim() || key, key)));
+  picker.disabled = !Object.keys(nodeEls).length;
+  picker.onchange = () => { if (picker.value) go(picker.value); };
   function updateTraceControls() {
-    document.getElementById("back").disabled = history.length === 0;
+    traceState = { current, history: [...history] };
+    byId("back").disabled = history.length === 0;
     const outs = succ[current] || [];
-    document.getElementById("next").disabled = current ? outs.length !== 1 : !Object.keys(succ).length;
-    if (!current) setStatus(Object.keys(succ).length ? "Ready · Select a step to trace" : "Ready · Diagram has no traceable connections");
-    else setStatus((nodeEls[current].textContent.trim() || current) + (outs.length > 1 ? " · Choose a highlighted branch" : outs.length === 0 ? " · End of path" : " · Next step available"));
+    byId("next").disabled = current ? outs.length !== 1 : !Object.keys(nodeEls).length;
+    byId("reset").disabled = !current;
+    picker.value = current || "";
+    byId("trace-status").textContent = !current
+      ? (Object.keys(nodeEls).length ? "Select a step to begin." : "This diagram has no traceable flowchart steps.")
+      : "Current step: " + (nodeEls[current].textContent.trim() || current) + (outs.length > 1 ? " · Choose a branch below." : outs.length === 0 ? " · End of path." : " · Next step available.");
+    const branches = byId("branches");
+    const hadBranchFocus = branches.contains(document.activeElement);
+    branches.replaceChildren();
+    outs.forEach(target => {
+      const button = document.createElement("button");
+      const labels = graph.filter(edge => edge.start === current && edge.end === target).map(edge => String(edge.text || "").replace(/<[^>]*>/g, "")).filter(Boolean);
+      button.textContent = (labels.length ? [...new Set(labels)].join(" / ") + ": " : "Next: ") + (nodeEls[target].textContent.trim() || target);
+      button.onclick = () => go(target);
+      branches.appendChild(button);
+    });
+    if (hadBranchFocus) (branches.querySelector("button") || picker).focus();
   }
   function go(key, record) { if (!nodeEls[key]) return;
     if (record !== false && current && current !== key) history.push(current);
     current = key; focus(key); updateTraceControls(); }
-  function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(succ)[0]; if (first) go(first); return; }
+  function stepNext() { if (!current) { const first = nodeEls.Start ? "Start" : Object.keys(nodeEls)[0]; if (first) go(first); return; }
     const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
   function stepBack() { if (history.length) go(history.pop(), false); }
 
   Object.entries(nodeEls).forEach(([k, g]) => {
     g.setAttribute("tabindex", "0");
     g.setAttribute("role", "button");
+    g.setAttribute("aria-pressed", String(k === current));
     g.setAttribute("aria-label", "Trace " + (g.textContent.trim() || k));
     g.addEventListener("click", ev => { ev.stopPropagation(); go(k); });
     g.addEventListener("keydown", ev => {
@@ -247,53 +307,140 @@ async function renderGraph() {
   document.getElementById("back").onclick  = () => stepBack();
   document.getElementById("next").onclick  = () => stepNext();
   document.getElementById("reset").onclick = () => { clearHL(); current = null; history.length = 0;
-    panZoom.resize(); panZoom.fit(); panZoom.center(); updateTraceControls(); };
+    Object.values(nodeEls).forEach(node => node.setAttribute("aria-pressed", "false")); updateTraceControls(); };
   document.onkeydown = ev => {
-    if (document.activeElement === srcEl) return;   // don't hijack typing in the editor
+    if (!stage.contains(document.activeElement)) return;   // don't hijack typing in the editor
     if (ev.key === "ArrowRight" || ev.key === "ArrowDown") { ev.preventDefault(); stepNext(); }
     else if (ev.key === "ArrowLeft" || ev.key === "ArrowUp") { ev.preventDefault(); stepBack(); }
   };
 
   VP = { panZoom: panZoom, relayout: relayoutLabels, lastKey: "" };
   try { relayoutLabels(); } catch { /* Optional geometry enhancement. */ }
+  if (current) focus(current, false);
   updateTraceControls();
+  return true;
 }
 
-// ---- toolbar wiring (persists across renders) ----
-document.getElementById("render").onclick = () => { clearTimeout(_typeTimer); renderGraph(); };
-document.getElementById("toggle").onclick = () => {
-  const hidden = document.getElementById("editor").classList.toggle("hidden");
-  document.getElementById("toggle").setAttribute("aria-expanded", String(!hidden));
-  if (_panZoom) { _panZoom.resize(); _panZoom.fit(); _panZoom.center(); }
+// Preserve the content point at the canvas center, including when its size changes.
+function captureView() {
+  if (!_panZoom) return null;
+  const { width, height, realZoom } = _panZoom.getSizes();
+  if (!realZoom || !width || !height) return null;
+  const pan = _panZoom.getPan();
+  return { scale: realZoom, x: (width / 2 - pan.x) / realZoom, y: (height / 2 - pan.y) / realZoom };
+}
+function restoreView(view) {
+  const sizes = _panZoom.getSizes();
+  if (sizes.realZoom > 0) _panZoom.zoomBy(view.scale / sizes.realZoom);
+  _panZoom.pan({ x: sizes.width / 2 - view.x * view.scale, y: sizes.height / 2 - view.y * view.scale });
+}
+function resizeCanvas() {
+  if (pendingPreview && stage.clientWidth && stage.clientHeight) { clearTimeout(_typeTimer); renderGraph(); return; }
+  if (!_panZoom || !stage.clientWidth || !stage.clientHeight) return;
+  const view = captureView();
+  _panZoom.resize();
+  if (view) restoreView(view);
+}
+byId("render").onclick = () => { clearTimeout(_typeTimer); renderGraph(); };
+byId("toggle").onclick = () => {
+  const hidden = byId("editor").classList.toggle("hidden");
+  byId("toggle").setAttribute("aria-expanded", String(!hidden));
+  byId("toggle").textContent = hidden ? "Show source" : "Hide source";
+  resizeCanvas();
 };
-
-const exportBtn = document.getElementById("export");
-if (exportBtn) exportBtn.onclick = exportViewer;
-
-function exportViewer() {
-  const src = srcEl.value;
-  const clone = document.documentElement.cloneNode(true);
-  const st = clone.querySelector("#stage"); if (st) st.innerHTML = "";
-  clone.querySelector("#status").textContent = "Loading…";
-  const er = clone.querySelector("#err"); if (er) er.textContent = "";
-  const ta = clone.querySelector("#src"); if (ta) ta.textContent = "";
-  const flag = document.createElement("script");
-  flag.textContent = "window.__FLOWCHART_VIEWER__=true;window.__FLOWCHART_SRC__="
-    + JSON.stringify(src).replace(/</g, "\\u003c") + ";";
-  clone.querySelector("head").appendChild(flag);
-  const html = "<!DOCTYPE html>\n" + clone.outerHTML;
-  const blob = new Blob([html], { type: "text/html" });
+byId("source-view").onclick = () => {
+  byId("editor").classList.remove("hidden");
+  byId("toggle").setAttribute("aria-expanded", "true");
+  byId("toggle").textContent = "Hide source";
+  showView("source");
+};
+byId("preview-view").onclick = () => showView("preview");
+byId("help-toggle").onclick = () => {
+  byId("help").hidden = !byId("help").hidden;
+  byId("help-toggle").setAttribute("aria-expanded", String(!byId("help").hidden));
+  resizeCanvas();
+};
+function download(contents, type, name) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "flowchart.html";
+  a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
-
-// live re-render on edit, debounced
+let exporting = false;
+byId("export").onclick = async () => {
+  if (exporting) return;
+  exporting = true;
+  byId("export").disabled = true;
+  byId("export").textContent = "Validating…";
+  const source = srcEl.value;
+  try {
+    if (!source.trim()) throw new Error("Enter a Mermaid diagram before exporting.");
+    // Validate actual renderability, not just parseability. Mermaid serializes renders.
+    const id = "exportCheck" + Date.now();
+    try { await mermaid.render(id, source); }
+    finally { document.getElementById("d" + id)?.remove(); }
+    if (source !== srcEl.value) { setStatus("Source changed during validation · Export again when ready"); return; }
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelector("body").classList.add("viewer");
+    clone.querySelector("body").dataset.view = "preview";
+    clone.querySelector("#stage").replaceChildren();
+    clone.querySelector("#src").textContent = "";
+    clone.querySelector("#file-status").textContent = "";
+    clone.querySelector("#save-status").textContent = "";
+    clone.querySelector("#status").textContent = "Loading…";
+    clone.querySelector("#error-box").hidden = true;
+    clone.querySelector("#err").textContent = "";
+    clone.querySelector("#err-details").textContent = "";
+    clone.querySelector("#branches").replaceChildren();
+    clone.querySelector("#step-picker").replaceChildren();
+    clone.querySelector("#trace-status").textContent = "Select a step to begin.";
+    const flag = document.createElement("script");
+    flag.textContent = "window.__FLOWCHART_VIEWER__=true;window.__FLOWCHART_SRC__=" + JSON.stringify(source).replace(/</g, "\\u003c") + ";";
+    clone.querySelector("head").appendChild(flag);
+    download("<!DOCTYPE html>\n" + clone.outerHTML, "text/html", "flowchart.html");
+    setStatus(source === lastRenderedSource ? "Viewer download started · Preview up to date" : "Viewer download started · Preview update pending");
+  } catch (error) { showError(error, "export"); showView("preview"); }
+  finally { exporting = false; byId("export").disabled = false; byId("export").textContent = "Export viewer"; }
+};
+function fileStatus(message) { byId("file-status").hidden = false; byId("file-status").textContent = message; }
+byId("download-source").onclick = () => {
+  download(srcEl.value, "text/plain;charset=utf-8", "diagram.mmd");
+  downloadedSource = srcEl.value;
+  fileStatus("Source download started.");
+};
+byId("open-source").onclick = () => byId("file-input").click();
+byId("file-input").onchange = async () => {
+  const file = byId("file-input").files[0];
+  if (!file) return;
+  const startingSource = srcEl.value;
+  try {
+    const contents = await file.text();
+    if (srcEl.value !== startingSource) { fileStatus("Source changed while the file was opening. Open the file again when ready."); return; }
+    previousFile = srcEl.value;
+    srcEl.value = contents;
+    byId("undo-import").hidden = false;
+    sourceChanged();
+    fileStatus("Opened " + file.name + ". Undo file replacement restores your previous source.");
+  } catch { fileStatus("Could not read this file. Try opening it again."); }
+  finally { byId("file-input").value = ""; }
+};
+byId("undo-import").onclick = () => {
+  if (previousFile === null) return;
+  const current = srcEl.value;
+  srcEl.value = previousFile; previousFile = current;
+  sourceChanged(); fileStatus("Previous source restored. Undo file replacement again to switch back.");
+};
 let _typeTimer = null;
-if (!VIEWER) srcEl.addEventListener("input", () => { saveSource(); ++_rid; setStatus("Changes pending…"); clearTimeout(_typeTimer); _typeTimer = setTimeout(renderGraph, 700); });
-
-window.addEventListener("resize", () => { if (_panZoom) { _panZoom.resize(); _panZoom.fit(); _panZoom.center(); } });
-
+function sourceChanged() {
+  saveSource(); ++_rid;
+  setStatus(lastRenderedSource === null ? "Changes pending · No preview yet" : "Changes pending · Preview is out of date");
+  clearTimeout(_typeTimer);
+  _typeTimer = setTimeout(renderGraph, 700);
+}
+if (!VIEWER) srcEl.addEventListener("input", sourceChanged);
+window.addEventListener("beforeunload", event => {
+  if (!VIEWER && !storageAvailable && downloadedSource !== srcEl.value) { event.preventDefault(); event.returnValue = ""; }
+});
+new ResizeObserver(resizeCanvas).observe(stage);
 renderGraph();

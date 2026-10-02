@@ -5,9 +5,11 @@
   "description": "An offline Mermaid diagram workspace",
   "scripts": {
     "build": "python3 scripts/build.py",
-    "test": "playwright test"
+    "test": "playwright test --project=chromium",
+    "test:browsers": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.63.0"
   }
 }

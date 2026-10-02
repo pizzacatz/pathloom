@@ -5,106 +5,118 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pathloom</title>
 <style>
-  :root { --bg:#0f1420; --panel:#182033; --ink:#e8ecf5; --accent:#4f8cff; --gold:#ffd166; --muted:#93a0bd; --err:#ff6b6b; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
-    font-family: "Segoe UI", system-ui, Arial, sans-serif; }
-  header { display:flex; align-items:center; gap:14px; padding:9px 14px;
-    background:var(--panel); border-bottom:1px solid #26304a; flex-wrap:wrap; }
-  header h1 { font-size:14px; margin:0; font-weight:600; letter-spacing:.2px; white-space:nowrap; }
-  header .hint { color:var(--muted); font-size:12px; margin-left:auto; }
-  .toolbar { display:flex; gap:6px; flex-wrap:wrap; }
-  button { background:#212b44; color:var(--ink); border:1px solid #33405f;
-    border-radius:6px; padding:6px 11px; font-size:13px; cursor:pointer; }
-  button:hover { background:#2b3757; border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#0b1220; font-weight:600; }
-  button.primary:hover { background:#3f7dff; }
-
-  body { display:flex; flex-direction:column; }
-  #main { flex:1; min-height:0; display:flex; }
-  #editor { width:360px; min-width:220px; display:flex; flex-direction:column;
-    border-right:1px solid #26304a; background:#0c111b; }
-  #editor.hidden { display:none; }
-  #editor .cap { padding:7px 10px; font-size:11px; letter-spacing:.4px; text-transform:uppercase;
-    color:var(--muted); border-bottom:1px solid #1c2436; }
-  #src { flex:1; width:100%; resize:none; border:0; outline:none; padding:10px 12px;
-    background:#0c111b; color:#d7e0f2; font-family:"Cascadia Code",Consolas,"Courier New",monospace;
-    font-size:12.5px; line-height:1.5; tab-size:2; }
-  #err { color:var(--err); font-size:12px; padding:8px 12px; border-top:1px solid #1c2436;
-    white-space:pre-wrap; min-height:0; }
-  #err:empty { display:none; }
-
-  #stage { flex:1; min-width:0; position:relative; overflow:hidden; }
-  #stage svg { width:100%; height:100%; display:block; }
-  #status { padding:10px 16px; color:var(--muted); font-size:12px; border-top:1px solid #26304a; }
-
-  /* trace interaction */
-  #stage g.node { cursor:pointer; }
-  #stage g.edgePaths path { cursor:pointer; }
-  #stage g.edgeLabels g.edgeLabel { cursor:pointer; }
-  #stage g.edgeLabels g.edgeLabel * { pointer-events:auto; }
-  .dim { opacity:0.15; transition:opacity .15s ease; }
-  g.node.hl-cur rect, g.node.hl-cur polygon, g.node.hl-cur circle, g.node.hl-cur path {
-    stroke:var(--gold) !important; stroke-width:3px !important; }
-
-  g.node.hl-next rect, g.node.hl-next polygon, g.node.hl-next circle, g.node.hl-next path {
-    stroke:var(--accent) !important; stroke-width:3px !important; }
-
-  path.hl-edge { stroke:var(--accent) !important; stroke-width:3.5px !important; }
-  button:disabled { opacity:.4; cursor:default; }
-  button:focus-visible, #src:focus-visible, g.node:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-  header { padding:14px 18px; gap:12px 24px; }
-  header h1 { font-size:20px; letter-spacing:-.5px; }
-  header .hint { flex-basis:100%; margin:0; line-height:1.5; }
-  .toolbar-group { display:flex; gap:6px; padding-right:12px; border-right:1px solid #33405f; }
-  .toolbar-group:last-child { border:0; padding:0; }
-  #editor { width:clamp(280px, 30vw, 440px); }
-  #editor .cap { padding:14px 16px; }
-  #src { padding:16px; line-height:1.7; }
-  #err { max-height:160px; overflow:auto; }
-  @media (max-width:700px) {
-    #main { flex-direction:column; }
-    #editor { width:100%; height:38%; min-height:150px; border-right:0; border-bottom:1px solid #26304a; }
-    #stage { min-height:180px; }
-    header { padding:10px 12px; }
-    .toolbar-group { flex-wrap:wrap; }
-  }
-  @media (prefers-reduced-motion:reduce) { .dim { transition:none; } }
+:root { color-scheme:dark; --bg:#0f1420; --panel:#182033; --editor:#0c111b; --ink:#e8ecf5; --muted:#adb9d0; --accent:#82b3ff; --gold:#ffd166; --err:#ff9292; --border:#33405f; --space-1:8px; --space-2:12px; --space-3:16px; --space-4:24px; --radius:6px; --small:0.875rem; }
+* { box-sizing:border-box; }
+[hidden], .hidden { display:none !important; }
+html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,sans-serif; }
+body { height:100dvh; display:flex; flex-direction:column; }
+button, textarea, select { font:inherit; }
+button, select { min-height:44px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--ink); padding:var(--space-1) var(--space-2); font-size:var(--small); cursor:pointer; }
+button:hover:not(:disabled) { border-color:var(--accent); }
+button:disabled { opacity:.5; cursor:default; }
+button.primary, button[aria-pressed="true"] { background:var(--accent); color:#101a2b; border-color:var(--accent); }
+:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+header { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-1) var(--space-4); padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
+h1 { font-size:1.25rem; margin:0; }
+h2, p { margin:0; }
+h2 { font-size:1rem; }
+.brand { margin-right:auto; }
+.brand p, .muted { color:var(--muted); font-size:var(--small); }
+.actions { display:flex; gap:var(--space-1); flex-wrap:wrap; align-items:center; }
+#main { display:flex; flex:1; min-height:320px; }
+#editor { display:flex; flex-direction:column; width:clamp(300px,32vw,480px); border-right:1px solid var(--border); background:var(--editor); }
+.panel-head { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); }
+.panel-head label, .panel-head h2 { margin-right:auto; font-weight:600; }
+#src { flex:1; width:100%; min-height:180px; resize:none; border:0; padding:var(--space-3); background:var(--editor); color:var(--ink); font:0.875rem/1.7 ui-monospace,Consolas,monospace; tab-size:2; }
+#src:focus-visible { outline-offset:-3px; }
+#save-status, #example-note, #file-status { padding:var(--space-1) var(--space-3); font-size:var(--small); overflow-wrap:anywhere; }
+#save-status { color:var(--muted); }
+#example-note { color:var(--gold); }
+#preview { display:flex; flex-direction:column; flex:1; min-width:0; }
+#stage { flex:1; min-height:220px; overflow:hidden; position:relative; }
+#stage svg { width:100%; height:100%; display:block; }
+#stage .empty { padding:var(--space-4); color:var(--muted); }
+#status, #error-box { padding:var(--space-1) var(--space-3); border-bottom:1px solid var(--border); font-size:var(--small); overflow-wrap:anywhere; }
+#error-box { color:var(--err); }
+#err-details { max-height:140px; overflow:auto; white-space:pre-wrap; font:inherit; }
+summary { cursor:pointer; min-height:32px; }
+#trace { padding:var(--space-2) var(--space-3); border-top:1px solid var(--border); max-height:38vh; overflow:auto; }
+#trace-status { margin:var(--space-1) 0; overflow-wrap:anywhere; }
+#branches { display:flex; flex-wrap:wrap; gap:var(--space-1); }
+#branches button { text-align:left; white-space:normal; overflow-wrap:anywhere; max-width:100%; }
+#step-picker { max-width:100%; min-width:0; flex:1; }
+#help { padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); }
+#help p { max-width:85ch; margin:var(--space-1) 0; }
+#mobile-views { display:none; padding:var(--space-1) var(--space-3); gap:var(--space-1); }
+.viewer .authoring, .viewer #editor { display:none !important; }
+#stage g.node, #stage g.edgePaths path, #stage g.edgeLabels g.edgeLabel { cursor:pointer; }
+#stage g.edgeLabels g.edgeLabel * { pointer-events:auto; }
+#stage .edgeLabel span { color:var(--ink) !important; background-color:var(--panel) !important; }
+.dim { opacity:.6; }
+g.node:focus { opacity:1; }
+g.node.hl-cur :is(rect,polygon,circle,path) { stroke:var(--gold) !important; stroke-width:4px !important; }
+g.node.hl-next :is(rect,polygon,circle,path) { stroke:var(--accent) !important; stroke-width:3px !important; stroke-dasharray:6 3; }
+path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
+@media (max-width:700px) {
+  #mobile-views { display:flex; }
+  #toggle { display:none; }
+  #main { min-height:360px; }
+  #editor { width:100%; border-right:0; }
+  body[data-view="source"] #preview, body[data-view="preview"] #editor { display:none; }
+  body.viewer #preview { display:flex; }
+  body[data-view="source"]:not(.viewer) #editor.hidden { display:flex !important; }
+  #trace { max-height:42vh; }
+  header { padding:var(--space-1) var(--space-3); }
+}
+@media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
 </style>
 </head>
-<body>
+<body data-view="source">
 <header>
-  <h1>Pathloom</h1>
-  <div class="toolbar" role="toolbar" aria-label="Diagram controls">
-    <div class="toolbar-group">
-    <button id="render" class="primary">Render</button>
-    <button id="toggle" aria-controls="editor" aria-expanded="true">Editor</button>
-    <button id="export" title="Download a standalone interactive HTML viewer">Export HTML</button>
-    </div>
-    <div class="toolbar-group">
-    <button id="back">&larr; Back</button>
-    <button id="next">Next &rarr;</button>
-    </div>
-    <div class="toolbar-group">
-    <button id="zin">Zoom in</button>
-    <button id="zout">Zoom out</button>
-    <button id="fit">Fit</button>
-    <button id="onehundred">100%</button>
-    <button id="reset">Reset trace</button>
-    </div>
+  <div class="brand"><h1>Pathloom</h1><p>Offline Mermaid workspace</p></div>
+  <div class="actions">
+    <button id="toggle" class="authoring" aria-controls="editor" aria-expanded="true">Hide source</button>
+    <button id="export" class="authoring primary">Export viewer</button>
+    <button id="help-toggle" aria-controls="help" aria-expanded="false">Help</button>
   </div>
-  <span class="hint" id="hint">Offline diagram workspace &middot; Changes render automatically &middot; Select a step to follow its path</span>
 </header>
-<div id="main">
-  <div id="editor">
-    <label class="cap" for="src">Mermaid source · Saved on this device</label>
-    <textarea id="src" spellcheck="false"></textarea>
-    <div id="err" role="alert"></div>
-  </div>
-  <div id="stage" role="region" aria-label="Diagram preview"></div>
+<section id="help" hidden aria-label="Workspace help">
+  <p><strong>Write a diagram.</strong> Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. Label a branch with <code>B -->|Yes| C[Done]</code>. Changes render automatically.</p>
+  <p><strong>Follow a path.</strong> Select a step in the diagram or the step list. Next follows one connection; at a decision, choose a labeled branch. Back retraces your path. Arrow keys navigate when the diagram has focus.</p>
+  <p><strong>Keep or share.</strong> Download source creates an editable .mmd file. Export viewer creates a validated, interactive HTML file anyone can open offline. Source saves in this browser when available; download a copy for safekeeping.</p>
+</section>
+<div id="mobile-views" class="authoring" role="group" aria-label="Workspace view">
+  <button id="source-view" aria-pressed="true" aria-controls="editor">Source</button>
+  <button id="preview-view" aria-pressed="false" aria-controls="preview">Preview</button>
 </div>
-
-<div id="status" role="status" aria-live="polite">Rendering&hellip;</div>
+<main id="main">
+  <section id="editor" aria-label="Source editor">
+    <div class="panel-head"><label for="src">Mermaid source</label><button id="render">Render now</button></div>
+    <div class="panel-head actions">
+      <button id="open-source">Open Mermaid file</button><button id="download-source">Download source</button>
+      <button id="undo-import" hidden>Undo file replacement</button>
+      <input id="file-input" type="file" accept=".mmd,.mermaid,.txt,text/plain" hidden />
+    </div>
+    <p id="save-status" role="status"></p>
+    <p id="example-note">Example: workspace approval · Fictional people and companies</p>
+    <p id="file-status" role="status" hidden></p>
+    <textarea id="src" spellcheck="false" aria-describedby="save-status" aria-label="Mermaid source"></textarea>
+  </section>
+  <section id="preview" aria-label="Diagram preview">
+    <div class="panel-head"><h2>Preview</h2><div class="actions" role="group" aria-label="Canvas controls">
+      <button id="zin" disabled>Zoom in</button><button id="zout" disabled>Zoom out</button><button id="fit" disabled>Fit</button><button id="onehundred" disabled>Actual size</button>
+    </div></div>
+    <p id="status" role="status">Rendering…</p>
+    <div id="error-box" hidden><p id="err" role="alert"></p><details><summary>Technical details</summary><pre id="err-details"></pre></details></div>
+    <div id="stage" role="region" aria-label="Interactive diagram" tabindex="0"></div>
+    <section id="trace" aria-label="Follow a path">
+      <div class="actions"><h2>Follow a path</h2><button id="back" disabled>← Back</button><button id="next" disabled>Next →</button><button id="reset" disabled>Clear trace</button></div>
+      <p id="trace-status" role="status">Select a step to begin.</p>
+      <div class="actions"><label for="step-picker">Step</label><select id="step-picker" disabled><option value="">Select a step</option></select></div>
+      <div id="branches" role="group" aria-label="Available next steps"></div>
+    </section>
+  </section>
+</main>
 <!-- SCRIPTS -->
 </body>
 </html>

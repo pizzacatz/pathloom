@@ -1,25 +1,23 @@
 # Pathloom specification
 
-## Distribution
+## Distribution and privacy
 
-`python3 scripts/build.py` joins `src/shell.html`, the two vendored runtime libraries, and `src/app.js`. It produces a standalone studio (`index.html`) and a fictional example viewer (`flowchart.html`). Source markers and viewer flags must be inserted only at intended shell locations.
+`python3 scripts/build.py` joins the readable shell, vendored libraries, and app code into a standalone studio and fictional example viewer. Both work from file URLs without runtime network access. Preserve third-party licenses. Viewers never read or write browser storage.
 
-## Rendering and persistence
+## Editing and state
 
-Use Mermaid with strict security, dark theme, HTML labels, and no automatic document scanning. Debounce edits for 700 ms; Render clears the debounce. A request generation counter prevents outdated results or errors from replacing newer edits. On invalid input, display an inline alert while retaining the last valid canvas.
+Persist source on input under `pathloom.source.v1`, remove the legacy draft key at studio startup, and report storage failure independently of preview status. Debounce preview updates for 700 ms. Render now clears the timer. Hidden mobile previews defer rendering until measurable; request generations discard outdated work. Keep the last valid diagram on errors, explicitly distinguish stale/absent/empty previews, and show actionable errors with optional technical details.
 
-Save editor input immediately under `pathloom.source.v1`. At studio startup, remove the legacy draft key without migrating it. Catch storage failures and disclose them in the status bar. Viewer mode neither reads nor writes storage.
+Open source files asynchronously without overwriting edits made during reading. Retain the replaced source in memory; undo swaps it with the current source so neither side is lost. Source download preserves exact text, including invalid syntax. Warn on navigation only when storage is unavailable and the current source has not been handed off for download.
 
-## Graph interaction
+## Canvas and trace
 
-Read connections from Mermaid's parsed diagram database. Match rendered edges by exact `LS-<source>` and `LE-<target>` classes. Unknown endpoints or missing classes disable those connections. Deduplicate successors while highlighting all parallel paths. Other diagram types render without trace controls.
+Use Mermaid's graph database and exact SVG edge classes for connections. Non-flowchart diagrams render without trace. Keep the selected node and valid history entries across renders, and preserve the content point at the canvas center and real zoom when possible. Layout changes resize without refitting. Fit is explicit; Clear trace never moves the viewport.
 
-Clicking a node selects it; successors and connecting edges highlight. Pan to the selected node while preserving zoom. Next starts at Start, if present, or the first node with a recognized outgoing edge; it advances only through a single successor. Back uses history. Branch and terminal states appear in the status bar. Nodes accept keyboard activation; arrow navigation must not interfere with editor typing.
+Offer equivalent node, step-select, and branch-button controls. Expose the current node with aria-pressed, text, and a solid outline; successors have dashed outlines. Maintain branch-button focus after activation. Node Enter/Space and diagram-scoped arrows navigate without intercepting native form controls. Optional adaptive label geometry cannot block rendering.
 
-Adaptive labels remain on their actual path curves. Label/path pairing requires matching counts. Optional geometry failures are non-fatal.
+## Shell and export
 
-## Layout and export
+Use coherent color, spacing, type, and control-size roles. Desktop shows source and preview; narrow layouts switch Source/Preview instead of stacking both. Keep file/render controls by the editor, trace controls together, and zoom controls by the preview. Help is a reversible disclosure. Clearly label fictional example content.
 
-Use a wrapping grouped toolbar, labeled source textarea, inline error alert, preview region, and persistent live status. On narrow screens stack the editor above the preview. Fit, actual-size, zoom, and reset controls remain available in viewers.
-
-Export clones the shell and runtime scripts, clears current diagram/editor/error/status content, and injects viewer flags and the current source. Escape `<` as a JavaScript Unicode escape before embedding JSON. Download an offline HTML viewer; hide all authoring controls and skip persistence.
+Export must render-validate the exact source snapshot, disable repeated activation, reject empty/invalid input, and cancel if source changes while validating. Escape less-than characters in embedded source JSON. Clear rendered/editor/error/import feedback from the cloned viewer. Report download initiation accurately. Viewer error messages must remain visible outside hidden authoring content.
