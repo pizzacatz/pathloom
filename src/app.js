@@ -111,7 +111,7 @@ function frame() {
     try {
       const p = VP.panZoom.getPan(), z = VP.panZoom.getZoom();
       const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y);
-      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); updateOverview(); }
+      if (key !== VP.lastKey) { VP.lastKey = key; updateOverview(); }
     } catch (e) { /* ignore between renders */ }
   }
   requestAnimationFrame(frame);
@@ -216,48 +216,8 @@ async function renderGraph() {
   // ---- adaptive edge labels ----
   const viewport = stage.querySelector(".svg-pan-zoom_viewport");
   const labelEls = Array.from(stage.querySelectorAll("g.edgeLabels g.edgeLabel"));
-  const edgeLabelData = (viewport && labelEls.length === edgeEls.length)
-    ? edgeEls.map((path, i) => { try { const len = path.getTotalLength(); if (!len) return null;
-        return { el: labelEls[i], path: path, len: len }; } catch (e) { return null; } }).filter(Boolean)
-    : [];
-
-  function visibleContentRect() {
-    const ctm = viewport.getScreenCTM(), inv = ctm.inverse(), sr = stage.getBoundingClientRect();
-    const cs = [[sr.left,sr.top],[sr.right,sr.top],[sr.right,sr.bottom],[sr.left,sr.bottom]];
-    const xs = [], ys = [];
-    for (const c of cs) { const pt = svgEl.createSVGPoint(); pt.x = c[0]; pt.y = c[1];
-      const q = pt.matrixTransform(inv); xs.push(q.x); ys.push(q.y); }
-    return { minX:Math.min.apply(0,xs), maxX:Math.max.apply(0,xs),
-             minY:Math.min.apply(0,ys), maxY:Math.max.apply(0,ys), scale: ctm.a };
-  }
-  function inRect(pt, R) { return pt.x >= R.minX && pt.x <= R.maxX && pt.y >= R.minY && pt.y <= R.maxY; }
-  function relayoutLabels() {
-    if (!edgeLabelData.length) return;
-    const z = panZoom.getZoom();
-    if (z <= 1.0001) {
-      for (const d of edgeLabelData) { const m = d.path.getPointAtLength(0.5 * d.len);
-        d.el.setAttribute("transform", "translate(" + m.x + "," + m.y + ")"); }
-      return;
-    }
-    const R = visibleContentRect();
-    const minLen = 55 / (R.scale || 1);
-    const STEPS = 48;
-    for (const d of edgeLabelData) {
-      const len = d.len; let f;
-      const src0 = d.path.getPointAtLength(0);
-      if (!inRect(src0, R)) { f = 0.5; }
-      else {
-        let fExit = 1;
-        for (let k = 1; k <= STEPS; k++) { const u = k / STEPS;
-          if (!inRect(d.path.getPointAtLength(u * len), R)) { fExit = (k - 1) / STEPS; break; } }
-        f = 0.5 * fExit;
-        const minF = Math.min(minLen / len, fExit);
-        if (f < minF) f = minF;
-      }
-      const pt = d.path.getPointAtLength(f * len);
-      d.el.setAttribute("transform", "translate(" + pt.x + "," + pt.y + ")");
-    }
-  }
+  // Label positions and collision spacing are solved before pan/zoom starts.
+  // Keep them anchored instead of sliding them back over nodes during a flight.
 
   // ---- highlight + centering ----
   function clearHL() {
@@ -480,8 +440,7 @@ async function renderGraph() {
 
   stage.onpointerdown = cancelFlyover;
   stage.onwheel = cancelFlyover;
-  VP = { panZoom: panZoom, relayout: relayoutLabels, lastKey: "" };
-  try { relayoutLabels(); } catch { /* Optional geometry enhancement. */ }
+  VP = { panZoom: panZoom, lastKey: "" };
   if (current) focus(current, false);
   updateTraceControls();
   return true;

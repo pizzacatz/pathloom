@@ -581,3 +581,35 @@ test('unresolved placements remain marked straight-line exceptions', async ({ pa
   await expect(edge).toHaveAttribute('marker-end', /url/);
   expect(await edge.evaluate(path => (path.getAttribute('d').match(/L/g)||[]).length)).toBe(1);
 });
+
+test('line labels paint above nodes and repel labels and shapes across zoom and export', async ({ page }, testInfo) => {
+  await page.goto(appURL);
+  const source='flowchart TD\nA[Start] --> B[Finish]\n'+Array.from({length:12},(_,i)=>'A -->|Choice '+(i+1)+' with details| B').join('\n');
+  await render(page,source);
+  const check=async()=>page.evaluate(()=>{
+    const labels=[...stage.querySelectorAll('g.edgeLabel')].map(element=>({element,rect:element.getBoundingClientRect()})).filter(label=>label.rect.width && label.rect.height);
+    const nodes=[...stage.querySelectorAll('g.node')].map(node=>node.getBoundingClientRect());
+    const overlap=(a,b)=>a.left<b.right-.5 && a.right>b.left+.5 && a.top<b.bottom-.5 && a.bottom>b.top+.5;
+    const errors=[];
+    for(let i=0;i<labels.length;i++) {
+      if(nodes.some(node=>overlap(labels[i].rect,node)))errors.push('Label contacts node');
+      if(labels.slice(0,i).some(other=>overlap(labels[i].rect,other.rect)))errors.push('Labels overlap');
+    }
+    const group=stage.querySelector('g.edgeLabels'), nodeGroup=stage.querySelector('g.nodes');
+    if(!(nodeGroup.compareDocumentPosition(group)&Node.DOCUMENT_POSITION_FOLLOWING))errors.push('Labels paint behind nodes');
+    return {errors,count:labels.length};
+  });
+  expect(await check()).toEqual({errors:[],count:12});
+  await expect(page.locator('#stage g.node[data-layout-moved]')).not.toHaveCount(0);
+  await page.locator('#zin').click();
+  expect(await check()).toEqual({errors:[],count:12});
+  await page.locator('#fit').click();
+  expect(await check()).toEqual({errors:[],count:12});
+  const downloadPromise=page.waitForEvent('download');
+  await page.locator('#export').click();
+  const download=await downloadPromise, output=testInfo.outputPath('label-viewer.html');
+  await download.saveAs(output);
+  await page.goto(pathToFileURL(output).href);
+  await expect(page.locator('#stage g.edgeLabel')).toHaveCount(13);
+  expect(await check()).toEqual({errors:[],count:12});
+});

@@ -68,6 +68,83 @@ function routeFlowchart(svg, graph) {
         : null;
     })
     .filter(Boolean);
+  const edgeLabels = [...svg.querySelectorAll("g.edgeLabels g.edgeLabel")];
+  const labelData =
+    edgeLabels.length === connections.length
+      ? connections
+          .map((connection, index) => {
+            const element = edgeLabels[index],
+              box = element.getBBox();
+            return box.width && box.height
+              ? {
+                  connection,
+                  element,
+                  box,
+                  width: box.width + 16,
+                  height: box.height + 12,
+                }
+              : null;
+          })
+          .filter(Boolean)
+      : [];
+  const overlaps = (a, b, gap = 0) =>
+    a.left < b.right + gap &&
+    a.right > b.left - gap &&
+    a.top < b.bottom + gap &&
+    a.bottom > b.top - gap;
+  function labelPlan(fallback = false) {
+    const placed = [],
+      failures = new Set();
+    for (const label of labelData) {
+      const edge = label.connection.edge,
+        a = nodes.get(edge.start).center,
+        b = nodes.get(edge.end).center;
+      const fractions = [0.5];
+      for (let i = 1; i <= 45; i++)
+        fractions.push(0.5 - i * 0.01, 0.5 + i * 0.01);
+      let position;
+      const tryPosition = (x, y) => {
+        const bounds = {
+          left: x - label.width / 2,
+          right: x + label.width / 2,
+          top: y - label.height / 2,
+          bottom: y + label.height / 2,
+        };
+        if (
+          [...nodes.values()].some((node) =>
+            overlaps(bounds, node.bounds, 12),
+          ) ||
+          placed.some((other) => overlaps(bounds, other.bounds, 8))
+        )
+          return false;
+        position = { label, x, y, bounds };
+        return true;
+      };
+      for (const t of fractions)
+        if (tryPosition(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) break;
+      if (!position) {
+        failures.add(label.connection);
+        if (fallback) {
+          const x = (a.x + b.x) / 2,
+            y = (a.y + b.y) / 2;
+          // Repel remaining labels into free space rather than ever stacking
+          // them. Nodes were already given a chance to create on-line room.
+          for (let ring = 1; !position && ring <= 100; ring++)
+            for (const sign of [-1, 1])
+              if (tryPosition(x + sign * ring * (label.width + 24), y)) break;
+        }
+      }
+      if (!position && fallback) {
+        const right = Math.max(
+          ...[...nodes.values()].map((node) => node.bounds.right),
+          ...placed.map((other) => other.bounds.right),
+        );
+        tryPosition(right + label.width / 2 + 24, (a.y + b.y) / 2);
+      }
+      if (position) placed.push(position);
+    }
+    return { placed, failures };
+  }
   function blockedBy(edge) {
     const a = nodes.get(edge.start).center,
       b = nodes.get(edge.end).center;
@@ -114,20 +191,30 @@ function routeFlowchart(svg, graph) {
     };
   }
   const score = () =>
-    connections.reduce((total, { edge }) => total + blockedBy(edge).length, 0);
+    connections.reduce((total, { edge }) => total + blockedBy(edge).length, 0) *
+      4 +
+    labelPlan().failures.size;
   let collisions = score();
   // Move destinations only. Accept a move only if it reduces the global
   // crossing count without overlapping nodes or reversing existing levels.
   for (let pass = 0; collisions && pass < 32; pass++) {
     let improved = false;
-    for (const { edge } of connections) {
-      if (!blockedBy(edge).length) continue;
+    for (const connection of connections) {
+      const { edge } = connection;
+      if (!blockedBy(edge).length && !labelPlan().failures.has(connection))
+        continue;
       const target = nodes.get(edge.end),
         before = { x: target.center.x, y: target.center.y };
-      const step = Math.max(100, target.bounds.right - target.bounds.left + 40);
+      const step = Math.max(
+        100,
+        target.bounds.right - target.bounds.left + 40,
+        ...labelData
+          .filter((label) => label.connection.edge.end === edge.end)
+          .map((label) => label.width + 40),
+      );
       let best = null;
       const candidates = [];
-      for (const dy of [0, 100, 200, 400])
+      for (const dy of [0, 100, 200, 400, 800])
         for (const dx of [
           -step,
           step,
@@ -137,6 +224,8 @@ function routeFlowchart(svg, graph) {
           step * 4,
           -step * 8,
           step * 8,
+          -step * 16,
+          step * 16,
         ])
           candidates.push({ x: before.x + dx, y: before.y + dy });
       candidates.sort(
@@ -190,6 +279,26 @@ function routeFlowchart(svg, graph) {
       }
     }
     if (!improved) break;
+  }
+  // Labels are painted last and stay anchored during pan/zoom, so interaction
+  // cannot undo collision-free placement.
+  const finalLabels = labelPlan(true);
+  for (const group of svg.querySelectorAll("g.edgeLabels"))
+    group.parentElement.append(group);
+  for (const { label, x, y } of finalLabels.placed) {
+    const point = new DOMPoint(x, y).matrixTransform(
+      label.element.parentElement.getCTM().inverse().multiply(root.getCTM()),
+    );
+    label.element.setAttribute(
+      "transform",
+      `translate(${point.x - label.box.x - label.box.width / 2},${point.y - label.box.y - label.box.height / 2})`,
+    );
+    if (finalLabels.failures.has(label.connection)) {
+      label.element.dataset.labelException = "true";
+      const title = document.createElementNS(ns, "title");
+      title.textContent = "Label moved off its line to prevent overlap.";
+      label.element.append(title);
+    }
   }
   // Refresh shape coordinate frames after the accepted node translations.
   for (const node of nodes.values())
