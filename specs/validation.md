@@ -25,3 +25,5 @@ Rounded routing verification: all 56 Chromium/Firefox checks passed. Branches, l
 Flowing Bézier update: 16 focused checks passed across Chromium and Firefox, covering curves around node interiors, top-entry arrowheads, self/return loops, bidirectional edges, tight spacing, large diagrams, exports, Start, and the 500 ms flyover. Default-chart curves were visually reviewed. Each connection gets its own clearance corridor; paths use cubic Béziers throughout.
 
 Gentler vertical flow: all 56 Chromium/Firefox checks passed, plus eight routing checks with added downward-monotonicity and outer-return-lane assertions. Default rank spacing increased to 140; explicit source overrides remain supported. The taller default chart was visually reviewed.
+
+Path transitions: 12 focused Chromium/Firefox checks passed, covering Next, branch selection, keyboard traversal, reverse Back, cancellation without losing history, reduced motion, curve-following duration/geometry, and view preservation on rerender.

@@ -187,6 +187,7 @@ test('rerender, editor toggle, resizing and clear trace preserve canvas context'
   await page.locator('#next').click();
   await openPath(page);
   await page.locator('#next').click();
+  await expect(page.locator('.hl-cur')).toContainText('Mara Vale');
   await page.locator('#zin').click();
   const before = await page.evaluate(() => captureView());
   await page.locator('#render').click();
@@ -302,6 +303,7 @@ test('canvas uses full height and panels collapse independently without changing
   const stage = await page.locator('#stage').boundingBox();
   expect(stage.height).toBeGreaterThan(850);
   expect(stage.width).toBe(1440);
+  await expect(page.locator('.hl-cur')).toContainText('Mara Vale');
   await page.locator('#zin').click();
   const before = await page.evaluate(() => captureView());
   await openSource(page);
@@ -502,3 +504,35 @@ for (const fixture of [
     await expect(page.locator('#stage g.edgePaths path[data-top-routed]')).not.toHaveCount(0);
   });
 }
+
+
+test('Path Next, branch, keyboard and Back animate along connections without corrupting history', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page, 'flowchart TD\nA[First] --> B{Choose}\nB -->|Yes| C[Finish]\nB -->|No| D[Review]');
+  await openPath(page);
+  await page.locator('#next').click();
+  await page.locator('#next').click();
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('.hl-cur')).toContainText('Choose');
+  await page.locator('#branches button').filter({hasText:'Yes:'}).click();
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('.hl-cur')).toContainText('Finish');
+  await page.locator('#back').click();
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await page.locator('#fit').click();
+  await expect(page.locator('.hl-cur')).toContainText('Finish');
+  await page.locator('#back').click();
+  await expect(page.locator('.hl-cur')).toContainText('Choose');
+  await page.locator('#stage').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('.hl-cur')).toContainText('First');
+  await expect(page.locator('#back')).toBeDisabled();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#stage')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('.hl-cur')).toContainText('Choose');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.locator('#back').click();
+  await expect(page.locator('.hl-cur')).toContainText('First');
+  await expect(page.locator('#stage')).not.toHaveAttribute('aria-busy', 'true');
+});

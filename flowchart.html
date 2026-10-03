@@ -111,7 +111,7 @@ path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
     <div class="panel-head"><h2>Help</h2><button id="help-close" aria-label="Close help panel">×</button></div>
     <div class="panel-content">
       <p><strong>Navigate.</strong> Start jumps to the first step at actual size. Clear view removes dimming and highlighting without moving the camera. Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
-      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear view removes selection without moving the view.</p>
+      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Moving between connected steps uses the 500 ms flyover; Back follows the line in reverse. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear view removes selection without moving the view.</p>
       <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently on the left. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
       <p><strong>Write.</strong> Open Source. Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. A labeled branch looks like <code>B -->|Yes| C[Done]</code>.</p>
       <p><strong>Keep or share.</strong> Download source saves editable Mermaid text. Export viewer validates and downloads an interactive offline HTML file. Download source for a portable backup.</p>
@@ -2853,9 +2853,14 @@ async function renderGraph() {
       panZoom.panBy({ x: dx / ctm.a, y: dy / ctm.d });
     } catch { /* A selected node still has a text equivalent. */ }
   }
-  function flyTo(edge) {
+  function flyTo(edge, reverse = false, record = true) {
     cancelFlyover();
-    if (matchMedia("(prefers-reduced-motion:reduce)").matches) { go(edge.end); return; }
+    const destination = reverse ? edge.start : edge.end;
+    const arrive = (reveal = true) => {
+      if (reverse && record === false) history.pop();
+      go(destination, record, reveal);
+    };
+    if (matchMedia("(prefers-reduced-motion:reduce)").matches) { arrive(); return; }
     try {
       const len = edge.path.getTotalLength();
       const inverse = viewport.getCTM().inverse();
@@ -2870,20 +2875,21 @@ async function renderGraph() {
         return toContent(nodeEls[key], { x: box.x + box.width/2, y: box.y + box.height/2 });
       };
       const view = captureView();
-      const start = nodeCenter(edge.start), end = nodeCenter(edge.end);
+      const start = nodeCenter(reverse ? edge.end : edge.start), end = nodeCenter(destination);
+      const curvePoint = fraction => toContent(edge.path, edge.path.getPointAtLength((reverse ? 1-fraction : fraction)*len));
       const at = fraction => {
         // Include node centers at each end, with most of the trip on the actual curve.
         if (fraction < .08) {
-          const first = toContent(edge.path, edge.path.getPointAtLength(0));
+          const first = curvePoint(0);
           return { x: start.x + (first.x-start.x)*fraction/.08, y: start.y + (first.y-start.y)*fraction/.08 };
         }
         if (fraction > .92) {
-          const last = toContent(edge.path, edge.path.getPointAtLength(len));
+          const last = curvePoint(1);
           return { x: last.x + (end.x-last.x)*(fraction-.92)/.08, y: last.y + (end.y-last.y)*(fraction-.92)/.08 };
         }
-        return toContent(edge.path, edge.path.getPointAtLength((fraction-.08)/.84*len));
+        return curvePoint((fraction-.08)/.84);
       };
-      if (!view || !len) { go(edge.end); return; }
+      if (!view || !len) { arrive(); return; }
       // Keep the camera's initial offset and dissolve it as it follows the line.
       const offset = { x: view.x-start.x, y: view.y-start.y };
       const begun = performance.now();
@@ -2896,10 +2902,10 @@ async function renderGraph() {
         panZoom.pan({ x: sizes.width/2-(point.x+offset.x*(1-progress))*view.scale,
           y: sizes.height/2-(point.y+offset.y*(1-progress))*view.scale });
         if (t < 1) animationFrame = requestAnimationFrame(tick);
-        else { animationFrame = null; stage.removeAttribute("aria-busy"); go(edge.end, true, false); }
+        else { animationFrame = null; stage.removeAttribute("aria-busy"); arrive(false); }
       }
       animationFrame = requestAnimationFrame(tick);
-    } catch { cancelFlyover(); go(edge.end); }
+    } catch { cancelFlyover(); arrive(); }
   }
   function focus(key, center = true) {
     if (!nodeEls[key]) return;
@@ -2941,7 +2947,7 @@ async function renderGraph() {
       const button = document.createElement("button");
       const labels = graph.filter(edge => edge.start === current && edge.end === target).map(edge => String(edge.text || "").replace(/<[^>]*>/g, "")).filter(Boolean);
       button.textContent = (labels.length ? [...new Set(labels)].join(" / ") + ": " : "Next: ") + (nodeEls[target].textContent.trim() || target);
-      button.onclick = () => go(target);
+      button.onclick = () => followTo(target);
       branches.appendChild(button);
     });
     if (hadBranchFocus) (branches.querySelector("button") || picker).focus();
@@ -2952,9 +2958,19 @@ async function renderGraph() {
     current = key; focus(key, reveal); updateTraceControls(); }
   const firstNode = Object.keys(nodeEls).find(key => !graph.some(edge => edge.end === key && nodeEls[edge.start])) || Object.keys(nodeEls)[0];
   byId("start").disabled = !firstNode;
+  function followTo(target) {
+    const edge = tracedEdges.find(edge => edge.start === current && edge.end === target);
+    if (edge) flyTo(edge); else go(target);
+  }
   function stepNext() { if (!current) { if (firstNode) go(firstNode); return; }
-    const outs = succ[current] || []; if (outs.length === 1) go(outs[0]); }
-  function stepBack() { if (history.length) go(history.pop(), false); }
+    const outs = succ[current] || []; if (outs.length === 1) followTo(outs[0]); }
+  function stepBack() {
+    if (!history.length) return;
+    const target = history[history.length-1];
+    const edge = tracedEdges.find(edge => edge.start === target && edge.end === current);
+    if (edge) flyTo(edge, true, false);
+    else go(history.pop(), false);
+  }
 
   Object.entries(nodeEls).forEach(([k, g]) => {
     g.setAttribute("tabindex", "0");
