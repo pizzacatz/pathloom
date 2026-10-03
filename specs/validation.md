@@ -19,3 +19,5 @@ Additional coverage: top-entry routing and sampled exclusion of every node inter
 Visual review: desktop 1440 × 900 and mobile 320/390 × 900. Inspect the editor, preview, trace controls, and wrapped toolbar.
 
 Environment limits: Chromium and Firefox verified; WebKit fails to launch because libavif16 is absent. This is an environment block, not a passed test or an established app defect. Actual Safari, real mobile keyboard behavior, and manual assistive-technology checks remain open. Automated accessibility scans and enlarged-root-text tests are not substitutes for those checks.
+
+Rounded routing verification: all 56 Chromium/Firefox checks passed. Branches, loops, bidirectional edges, and tight spacing include quadratic bends while preserving top-entry stems and avoiding node interiors. The default chart was also visually reviewed.
