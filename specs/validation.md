@@ -35,3 +35,5 @@ Straight-line routing: connections now use only M/L commands and sharp joins. Fo
 Incoming junction centers: 14 focused Chromium/Firefox checks passed. Incoming paths to branching objects terminate at their geometric center; masks hide internal target segments. Tests cover centered endpoints, node clearance, forward/reverse path transitions, overview references, and exported viewers.
 
 Vertical arrivals and visible arrowheads: 16 focused Chromium/Firefox checks passed. Diagonal shortcuts were removed; incoming junctions retain masked center geometry and a visible vertical arrowhead at the top boundary. Tests verify arrival-stem direction/marker preservation, centered paths, obstacle clearance, exports, and path-following animation. Default-chart appearance was visually reviewed.
+
+Single-segment connections: focused Chromium/Firefox checks pass for center collinearity, exactly one M/L segment, actual-shape clipping, external arrowhead tips, isolated overview masks, exported viewers, large charts, Start, and forward/reverse path transitions. The default chart was visually reviewed. Geometry tests account for SVG scaling when measuring marker length.

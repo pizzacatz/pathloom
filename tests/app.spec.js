@@ -466,44 +466,41 @@ for (const fixture of [
   'flowchart TD\nA[One] <--> B[Two]\nA --> B\nB --> C[Three]\nC --> A',
   '%%{init: {"flowchart": {"rankSpacing": 18}}}%%\nflowchart TD\nA[Start] --> B[Work] --> C[Done]\nC --> A',
 ]) {
-  test('routing enters tops and never crosses node interiors: ' + fixture.split('\n')[0] + fixture.length, async ({ page }) => {
+  test('connections are single straight center-aligned lines with external arrowheads: ' + fixture.length, async ({ page }) => {
     await page.goto(appURL);
     await render(page, fixture);
     await expect(page.locator('#status')).toContainText('up to date');
-    const violations = await page.evaluate(() => {
-      const svg = stage.querySelector('svg'), errors = [];
-      const nodes = [...stage.querySelectorAll('g.node')].map(node => ({ id:node.dataset.id, rect:node.getBoundingClientRect() }));
-      for (const path of stage.querySelectorAll('g.edgePaths path[data-top-routed]')) {
-        const length = path.getTotalLength(), matrix = path.getScreenCTM();
-        const end = path.getPointAtLength(length).matrixTransform(matrix);
-        const previous = path.getPointAtLength(Math.max(0,length-2)).matrixTransform(matrix);
-        const target = nodes.find(node => path.classList.contains('LE-' + node.id));
-        if (Math.abs(end.x-(target.rect.left+target.rect.width/2))>1 || (path.dataset.centerTarget === 'true' ? Math.abs(end.y-(target.rect.top+target.rect.height/2))>1 : end.y>target.rect.top+1) || previous.y>=end.y || Math.abs(previous.x-end.x)>1) errors.push('Not a top entry: '+path.id);
-        if (path.hasAttribute('marker-start')) {
-          const start = path.getPointAtLength(0).matrixTransform(matrix), after = path.getPointAtLength(2).matrixTransform(matrix);
-          const source = nodes.find(node => path.classList.contains('LS-' + node.id));
-          if (Math.abs(start.x-(source.rect.left+source.rect.width/2))>1 || start.y>source.rect.top+1 || after.y>=start.y) errors.push('Not a top start arrow: '+path.id);
+    const errors = await page.evaluate(() => {
+      const nodes = [...stage.querySelectorAll('g.node')], errors=[];
+      const center = node => {
+        const box=node.getBBox();
+        return new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(node.getCTM());
+      };
+      const contains = (node,point) => [...node.querySelectorAll('rect,polygon,circle,ellipse,path')]
+        .filter(shape => !shape.closest('.label')).some(shape => shape.isPointInFill(point.matrixTransform(shape.getCTM().inverse())));
+      for (const path of stage.querySelectorAll('g.edgePaths path[data-straight-routed]')) {
+        const source=nodes.find(node=>path.classList.contains('LS-'+node.dataset.id)),
+          target=nodes.find(node=>path.classList.contains('LE-'+node.dataset.id)), a=center(source),b=center(target),
+          distance=Math.hypot(b.x-a.x,b.y-a.y), length=path.getTotalLength();
+        if (!/^M[^MLCQAST]+ L[^MLCQAST]+$/i.test(path.getAttribute('d'))) errors.push('Has bends: '+path.id);
+        if (!distance) continue; // A self-return has coincident centers.
+        const start=path.getPointAtLength(0).matrixTransform(path.getCTM()),
+          end=path.getPointAtLength(length).matrixTransform(path.getCTM());
+        for (const point of [start,end]) {
+          if (Math.abs((point.x-a.x)*(b.y-a.y)-(point.y-a.y)*(b.x-a.x))/distance>.01) errors.push('Not center aligned: '+path.id);
         }
-        const source = nodes.find(node => path.classList.contains('LS-' + node.id));
-        const forward = !path.hasAttribute('marker-start') && target.rect.top > source.rect.bottom;
-        let previousY = path.getPointAtLength(0).matrixTransform(matrix).y, outside = false;
-        for (let i=1;i<200;i++) {
-          const point = path.getPointAtLength(length*i/200).matrixTransform(matrix);
-          if (forward && point.y < previousY - .01) errors.push('Forward edge rises: '+path.id);
-          previousY = point.y;
-          outside ||= point.x < Math.min(...nodes.map(n => n.rect.left)) - 1 || point.x > Math.max(...nodes.map(n => n.rect.right)) + 1;
-          const crossed = nodes.find(node => point.x>node.rect.left+.5 && point.x<node.rect.right-.5 && point.y>node.rect.top+.5 && point.y<node.rect.bottom-.5);
-          if(crossed && !(((path.dataset.centerRouted === 'true' && crossed.id === source.id) || (path.dataset.centerTarget === 'true' && crossed.id === target.id)) && path.hasAttribute('mask'))) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
-        }
-        if (!forward && !outside) errors.push('Return edge lacks outer lane: '+path.id);
+        const markerLength=5*Math.hypot(path.getCTM().a,path.getCTM().b);
+        const tip=new DOMPoint(end.x+(b.x-a.x)*markerLength/distance,end.y+(b.y-a.y)*markerLength/distance);
+        if (contains(source,start) || contains(target,end) || contains(target,tip)) errors.push('Endpoint/arrowhead inside a shape: '+path.id);
+        if (!path.hasAttribute('mask') || !path.hasAttribute('marker-end')) errors.push('Missing mask or arrow: '+path.id);
       }
       return errors;
     });
-    expect(violations).toEqual([]);
-    expect(await page.locator('#stage g.edgePaths path[data-top-routed]').evaluateAll(paths => paths.every(path => path.getAttribute('d').includes('L') && !/[CQAST]/i.test(path.getAttribute('d'))))).toBe(true);
-    await expect(page.locator('#stage g.edgePaths path[data-top-routed]')).not.toHaveCount(0);
+    expect(errors).toEqual([]);
+    await expect(page.locator('#stage g.edgePaths path[data-straight-routed]')).not.toHaveCount(0);
   });
 }
+
 
 
 test('Path Next, branch, keyboard and Back animate along connections without corrupting history', async ({ page }) => {
@@ -538,41 +535,14 @@ test('Path Next, branch, keyboard and Back animate along connections without cor
 });
 
 
-test('branches fan out from source centers with masked interiors and isolated overview masks', async ({ page }) => {
+test('straight junction arrows retain visible markers and isolated overview masks', async ({ page }) => {
   await page.goto(appURL);
   await render(page, 'flowchart TD\nA[Begin] --> B{Choose}\nB -->|Yes| C[Accept]\nB -->|No| D[Review]\nC --> E[Done]');
-  const result = await page.evaluate(() => {
-    const source = stage.querySelector('g.node[data-id="B"]'), box = source.getBBox(),
-      center = new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(source.getCTM());
-    return [...stage.querySelectorAll('g.edgePaths path.LS-B[data-top-routed]')].map(path => {
-      const start = path.getPointAtLength(0).matrixTransform(path.getCTM()),
-        quarter = path.getPointAtLength(path.getTotalLength()*.25).matrixTransform(path.getCTM());
-      const id = path.getAttribute('mask').slice(5,-1), mask = document.getElementById(id);
-      return {distance:Math.hypot(start.x-center.x,start.y-center.y), fan:quarter.x-center.x,
-        mask:!!mask?.querySelector('polygon'), overview:!!document.getElementById('overview-'+id)};
-    });
-  });
-  expect(result).toHaveLength(2);
-  result.forEach(edge => {expect(edge.distance).toBeLessThan(.1);expect(edge.mask).toBe(true);expect(edge.overview).toBe(true);});
-  expect(result[0].fan * result[1].fan).toBeLessThan(0);
-  await expect(page.locator('#stage path.LS-A[data-top-routed]')).not.toHaveAttribute('data-center-routed');
-  await expect(page.locator('#stage path.LE-B[data-top-routed]')).toHaveAttribute('data-center-target', 'true');
-  const incomingDistance = await page.locator('#stage path.LE-B[data-top-routed]').evaluate(path => {
-    const target = stage.querySelector('g.node[data-id="B"]'), box = target.getBBox();
-    const center = new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(target.getCTM());
-    const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(path.getCTM());
-    return Math.hypot(end.x-center.x,end.y-center.y);
-  });
-  expect(incomingDistance).toBeLessThan(.1);
-  const arrow = page.locator('#stage path.junction-arrowhead');
-  await expect(arrow).toHaveCount(1);
-  await expect(arrow).toHaveAttribute('marker-end', /url/);
-  const vertical = await arrow.evaluate(path => {
-    const a = path.getPointAtLength(0), b = path.getPointAtLength(path.getTotalLength());
-    return Math.abs(a.x-b.x)<.01 && b.y>a.y && !path.hasAttribute('mask');
-  });
-  expect(vertical).toBe(true);
-  await expect(page.locator('#overview-map')).toBeHidden();
+  await expect(page.locator('#stage path[data-straight-routed]')).toHaveCount(4);
+  await expect(page.locator('#stage path.LE-B[data-straight-routed]')).toHaveAttribute('marker-end', /url/);
+  await expect(page.locator('#stage .junction-arrowhead')).toHaveCount(0);
+  const masks = await page.locator('#stage path[data-straight-routed]').evaluateAll(paths=>paths.map(path=>path.getAttribute('mask').slice(5,-1)));
+  for (const id of new Set(masks)) await expect(page.locator('[id="overview-'+id+'"]')).toHaveCount(1);
   await page.locator('#overview-toggle').click();
   const duplicateIds = await page.locator('#overview-map [id]').evaluateAll(elements => elements.map(e=>e.id).filter((id,index,ids)=>ids.indexOf(id)!==index));
   expect(duplicateIds).toEqual([]);

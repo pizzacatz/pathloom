@@ -416,7 +416,7 @@ async function renderGraph() {
     p.addEventListener("click", jump);
     const hitArea = p.cloneNode(false);
     hitArea.removeAttribute("id");
-    hitArea.removeAttribute("data-top-routed");
+    hitArea.removeAttribute("data-straight-routed");
     hitArea.removeAttribute("marker-start"); hitArea.removeAttribute("marker-end");
     hitArea.removeAttribute("style");
     hitArea.setAttribute("class", "edge-hit");
