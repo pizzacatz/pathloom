@@ -33,3 +33,5 @@ Centered branches: focused Chromium/Firefox checks cover center-origin geometry,
 Straight-line routing: connections now use only M/L commands and sharp joins. Focused Chromium/Firefox checks verify downward-only forward routes, outer return lanes, source-center branch masks, top-entry arrowheads, box clearance, exports, overview, and 500 ms forward/reverse transitions. The default chart was visually reviewed.
 
 Incoming junction centers: 14 focused Chromium/Firefox checks passed. Incoming paths to branching objects terminate at their geometric center; masks hide internal target segments. Tests cover centered endpoints, node clearance, forward/reverse path transitions, overview references, and exported viewers.
+
+Vertical arrivals and visible arrowheads: 16 focused Chromium/Firefox checks passed. Diagonal shortcuts were removed; incoming junctions retain masked center geometry and a visible vertical arrowhead at the top boundary. Tests verify arrival-stem direction/marker preservation, centered paths, obstacle clearance, exports, and path-following animation. Default-chart appearance was visually reviewed.

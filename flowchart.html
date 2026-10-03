@@ -2479,35 +2479,12 @@ function routeFlowchart(svg, graph) {
     const start = points[0],
       end = points[points.length - 1];
     if (!downward) return points;
-    if (downward) {
-      const approach = {
-        x: end.x,
-        y: end.y - Math.min(24, (end.y - start.y) / 3),
-      };
-      if (
-        segmentFreeOfNodes(start, approach) &&
-        segmentFreeOfNodes(approach, end)
-      )
-        return [start, approach, end];
-    }
-    // Preserve return lanes and the final vertical stem; shortcut only where
-    // a straight segment is clear and does not make a forward edge rise.
-    const result = [start];
-    let i = 0;
-    while (i < points.length - 2) {
-      let next = i + 1;
-      for (let j = points.length - 2; j > i; j--) {
-        if (downward && points[j].y < points[i].y) continue;
-        if (segmentFreeOfNodes(points[i], points[j])) {
-          next = j;
-          break;
-        }
-      }
-      result.push(points[next]);
-      i = next;
-    }
-    result.push(end);
-    return result;
+    const turn = { x: end.x, y: start.y };
+    if (segmentFreeOfNodes(start, turn) && segmentFreeOfNodes(turn, end))
+      return [start, turn, end];
+    // Retain the orthogonal obstacle route when a direct L-shaped route
+    // is blocked. Incoming stems remain vertical without diagonal shortcuts.
+    return points;
   }
   const allPoints = [];
   routes.forEach(({ path, points, downward, edge }, index) => {
@@ -2548,6 +2525,24 @@ function routeFlowchart(svg, graph) {
     }
     points.forEach((point, index) => command(index ? "L" : "M", point));
     path.setAttribute("d", commands.join(" "));
+    if (centeredTarget && path.hasAttribute("marker-end")) {
+      // Center geometry is masked inside the junction; retain a visible
+      // arrowhead at its top boundary on a separate, vertical arrival stem.
+      const target = boxes.get(edge.end),
+        x = (target.left + target.right) / 2;
+      const arrow = path.cloneNode(false);
+      arrow.removeAttribute("id");
+      arrow.removeAttribute("transform");
+      arrow.removeAttribute("marker-start");
+      arrow.removeAttribute("mask");
+      arrow.setAttribute("class", "flowchart-link junction-arrowhead");
+      arrow.setAttribute(
+        "d",
+        `M${x},${target.top - 20} L${x},${target.top - 5}`,
+      );
+      arrow.style.pointerEvents = "none";
+      coordinateRoot.append(arrow);
+    }
     if (centered || centeredTarget) {
       // Keep the centered endpoint geometry for tracing, but hide the portion
       // inside the source shape even when that node is dimmed or transparent.

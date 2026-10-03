@@ -564,6 +564,14 @@ test('branches fan out from source centers with masked interiors and isolated ov
     return Math.hypot(end.x-center.x,end.y-center.y);
   });
   expect(incomingDistance).toBeLessThan(.1);
+  const arrow = page.locator('#stage path.junction-arrowhead');
+  await expect(arrow).toHaveCount(1);
+  await expect(arrow).toHaveAttribute('marker-end', /url/);
+  const vertical = await arrow.evaluate(path => {
+    const a = path.getPointAtLength(0), b = path.getPointAtLength(path.getTotalLength());
+    return Math.abs(a.x-b.x)<.01 && b.y>a.y && !path.hasAttribute('mask');
+  });
+  expect(vertical).toBe(true);
   await expect(page.locator('#overview-map')).toBeHidden();
   await page.locator('#overview-toggle').click();
   const duplicateIds = await page.locator('#overview-map [id]').evaluateAll(elements => elements.map(e=>e.id).filter((id,index,ids)=>ids.indexOf(id)!==index));
