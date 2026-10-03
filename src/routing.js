@@ -40,7 +40,7 @@ function routeFlowchart(svg, graph) {
     .filter(Boolean);
   if (!connections.length) return;
   const bounds = Array.from(boxes.values());
-  function routesWithClearance(clearance) {
+  function routesWithClearance(clearance, selectedConnections) {
     const portGap = Math.max(clearance, 8);
     const obstacles = bounds.map((b) => ({
       left: b.left - clearance,
@@ -184,7 +184,7 @@ function routeFlowchart(svg, graph) {
       return null;
     }
     const routes = [];
-    for (const { path, edge } of connections) {
+    for (const { path, edge } of selectedConnections) {
       const source = boxes.get(edge.start),
         target = boxes.get(edge.end);
       const sourceX = (source.left + source.right) / 2,
@@ -238,16 +238,112 @@ function routeFlowchart(svg, graph) {
     }
     return routes;
   }
-  // Tight layouts get smaller clearances, but never permit a line through a node.
-  let routes;
-  for (const gap of [12, 6, 2, 0.5]) {
-    routes = routesWithClearance(gap);
-    if (routes) break;
+  // Give each connection its own broad corridor. A tightly spaced forward
+  // edge must not force a return loop to hug every neighboring box.
+  const routes = [];
+  for (const connection of connections) {
+    let routed;
+    for (const gap of [48, 32, 24, 16, 12, 6, 2, 0.5]) {
+      routed = routesWithClearance(gap, [connection]);
+      if (routed) break;
+    }
+    if (!routed)
+      throw new Error(
+        "Cannot route connections around overlapping node bounds. Increase flowchart nodeSpacing or rankSpacing.",
+      );
+    routes.push(...routed);
   }
-  if (!routes)
-    throw new Error(
-      "Cannot route connections around overlapping node bounds. Increase flowchart nodeSpacing or rankSpacing.",
+  const mix = (a, b, t = 0.5) => ({
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  });
+  // Subdivide Bezier hulls until they are disjoint from node interiors. This
+  // checks the whole curve, including narrow collisions between sample points.
+  function curveFree(curve, depth = 0) {
+    const left = Math.min(...curve.map((p) => p.x)),
+      right = Math.max(...curve.map((p) => p.x)),
+      top = Math.min(...curve.map((p) => p.y)),
+      bottom = Math.max(...curve.map((p) => p.y));
+    if (
+      !bounds.some(
+        (b) =>
+          left < b.right - 0.001 &&
+          right > b.left + 0.001 &&
+          top < b.bottom - 0.001 &&
+          bottom > b.top + 0.001,
+      )
+    )
+      return true;
+    if (depth === 14) return false;
+    const [a, b, c, d] = curve,
+      ab = mix(a, b),
+      bc = mix(b, c),
+      cd = mix(c, d),
+      abc = mix(ab, bc),
+      bcd = mix(bc, cd),
+      middle = mix(abc, bcd);
+    return (
+      curveFree([a, ab, abc, middle], depth + 1) &&
+      curveFree([middle, bcd, cd, d], depth + 1)
     );
+  }
+  function flowingCurves(points, reversed) {
+    const start = points[0],
+      end = points[points.length - 1];
+    const distance = Math.hypot(end.x - start.x, end.y - start.y);
+    const handle = Math.max(
+      8,
+      Math.abs(end.y - start.y) * 0.5,
+      distance * 0.25,
+    );
+    // Prefer a single flowing S-curve with vertical endpoint tangents. Loops
+    // and blocked direct connections instead follow the obstacle corridor.
+    const direct = [
+      start,
+      { x: start.x, y: start.y + (reversed ? -handle : handle) },
+      { x: end.x, y: end.y - handle },
+      end,
+    ];
+    if (distance > 0 && curveFree(direct)) return [direct];
+    let polygon = points;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const curves = [];
+      let cursor = polygon[0];
+      for (let i = 1; i < polygon.length - 1; i++) {
+        const control = polygon[i],
+          end = mix(control, polygon[i + 1]);
+        // Degree-elevated quadratic B-spline: adjacent segments share a
+        // tangent and consume the full corridor, without radius-based elbows.
+        curves.push([
+          cursor,
+          mix(cursor, control, 2 / 3),
+          mix(end, control, 2 / 3),
+          end,
+        ]);
+        cursor = end;
+      }
+      const end = polygon[polygon.length - 1];
+      curves.push([
+        cursor,
+        mix(cursor, end, 1 / 3),
+        mix(cursor, end, 2 / 3),
+        end,
+      ]);
+      const unsafe = curves.map((curve) => !curveFree(curve));
+      if (!unsafe.some(Boolean)) return curves;
+      // Refine only near an obstacle; broad unobstructed sweeps remain intact.
+      const refined = [polygon[0]];
+      for (let i = 1; i < polygon.length; i++) {
+        if (unsafe[i - 1] || unsafe[i])
+          refined.push(mix(polygon[i - 1], polygon[i]));
+        refined.push(polygon[i]);
+      }
+      polygon = refined;
+    }
+    throw new Error(
+      "Cannot create a smooth connection clear of nodes. Increase flowchart nodeSpacing or rankSpacing.",
+    );
+  }
   const allPoints = [];
   routes.forEach(({ path, points }) => {
     const matrix = path.getCTM().inverse().multiply(coordinateRoot.getCTM());
@@ -263,70 +359,18 @@ function routeFlowchart(svg, graph) {
             .join(" "),
       );
     };
-    command("M", points[0]);
-    for (let i = 1; i < points.length - 1; i++) {
-      const before = points[i - 1],
-        corner = points[i],
-        after = points[i + 1];
-      const incoming = Math.hypot(corner.x - before.x, corner.y - before.y);
-      const outgoing = Math.hypot(after.x - corner.x, after.y - corner.y);
-      // Leave a straight terminal stem for the arrowhead and avoid overlapping
-      // neighboring bends. Quadratic curves have tangent-continuous joins.
-      let radius = Math.min(
-        16,
-        incoming / 2,
-        outgoing / 2,
-        i === 1 ? Math.max(0, incoming - 2) : Infinity,
-        i === points.length - 2 ? Math.max(0, outgoing - 2) : Infinity,
-      );
-      const perpendicular =
-        (corner.x - before.x) * (after.x - corner.x) +
-          (corner.y - before.y) * (after.y - corner.y) ===
-        0;
-      if (!perpendicular || !incoming || !outgoing) radius = 0;
-      let entry, exit;
-      while (radius > 0.05) {
-        entry = {
-          x: corner.x + ((before.x - corner.x) * radius) / incoming,
-          y: corner.y + ((before.y - corner.y) * radius) / incoming,
-        };
-        exit = {
-          x: corner.x + ((after.x - corner.x) * radius) / outgoing,
-          y: corner.y + ((after.y - corner.y) * radius) / outgoing,
-        };
-        // The entire Bezier lies inside this hull. Reject bends whose hull
-        // overlaps any node, rather than relying on sampled collision checks.
-        const left = Math.min(entry.x, corner.x, exit.x),
-          right = Math.max(entry.x, corner.x, exit.x),
-          top = Math.min(entry.y, corner.y, exit.y),
-          bottom = Math.max(entry.y, corner.y, exit.y);
-        if (
-          !bounds.some(
-            (b) =>
-              left < b.right - 0.001 &&
-              right > b.left + 0.001 &&
-              top < b.bottom - 0.001 &&
-              bottom > b.top + 0.001,
-          )
-        )
-          break;
-        radius /= 2;
-      }
-      if (radius > 0.05) {
-        command("L", entry);
-        command("Q", corner, exit);
-      } else command("L", corner);
-    }
-    command("L", points[points.length - 1]);
+    const curves = flowingCurves(points, path.hasAttribute("marker-start"));
+    command("M", curves[0][0]);
+    curves.forEach((curve) => command("C", ...curve.slice(1)));
     path.setAttribute("d", commands.join(" "));
     path.style.strokeLinejoin = "round";
     path.dataset.topRouted = "true";
     const rootTransform =
       coordinateRoot.transform.baseVal.consolidate()?.matrix || new DOMMatrix();
     allPoints.push(
-      ...points.map((p) =>
-        new DOMPoint(p.x, p.y).matrixTransform(rootTransform),
-      ),
+      ...curves
+        .flat()
+        .map((p) => new DOMPoint(p.x, p.y).matrixTransform(rootTransform)),
     );
   });
   const box = svg.getBBox();

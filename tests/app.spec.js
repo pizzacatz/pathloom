@@ -491,7 +491,7 @@ for (const fixture of [
       return errors;
     });
     expect(violations).toEqual([]);
-    expect(await page.locator('#stage g.edgePaths path[data-top-routed]').evaluateAll(paths => paths.some(path => path.getAttribute('d').includes('Q')))).toBe(true);
+    expect(await page.locator('#stage g.edgePaths path[data-top-routed]').evaluateAll(paths => paths.every(path => path.getAttribute('d').includes('C') && !/[LQ]/.test(path.getAttribute('d'))))).toBe(true);
     await expect(page.locator('#stage g.edgePaths path[data-top-routed]')).not.toHaveCount(0);
   });
 }

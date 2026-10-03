@@ -21,3 +21,5 @@ Visual review: desktop 1440 × 900 and mobile 320/390 × 900. Inspect the editor
 Environment limits: Chromium and Firefox verified; WebKit fails to launch because libavif16 is absent. This is an environment block, not a passed test or an established app defect. Actual Safari, real mobile keyboard behavior, and manual assistive-technology checks remain open. Automated accessibility scans and enlarged-root-text tests are not substitutes for those checks.
 
 Rounded routing verification: all 56 Chromium/Firefox checks passed. Branches, loops, bidirectional edges, and tight spacing include quadratic bends while preserving top-entry stems and avoiding node interiors. The default chart was also visually reviewed.
+
+Flowing Bézier update: 16 focused checks passed across Chromium and Firefox, covering curves around node interiors, top-entry arrowheads, self/return loops, bidirectional edges, tight spacing, large diagrams, exports, Start, and the 500 ms flyover. Default-chart curves were visually reviewed. Each connection gets its own clearance corridor; paths use cubic Béziers throughout.
