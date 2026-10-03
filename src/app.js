@@ -373,6 +373,8 @@ async function renderGraph() {
       const button = document.createElement("button");
       const labels = graph.filter(edge => edge.start === current && edge.end === target).map(edge => String(edge.text || "").replace(/<[^>]*>/g, "")).filter(Boolean);
       button.textContent = (labels.length ? [...new Set(labels)].join(" / ") + ": " : "Next: ") + (nodeEls[target].textContent.trim() || target);
+      const exception = tracedEdges.find(edge => edge.start === current && edge.end === target && edge.path.dataset.routingException);
+      if (exception) button.title = exception.path.querySelector("title")?.textContent || "Layout exception";
       button.onclick = () => followTo(target);
       branches.appendChild(button);
     });
@@ -426,6 +428,8 @@ async function renderGraph() {
     hitArea.setAttribute("vector-effect", "non-scaling-stroke");
     hitArea.setAttribute("pointer-events", "stroke");
     hitArea.setAttribute("aria-hidden", "true");
+    const routeTitle = p.querySelector("title");
+    if (routeTitle) hitArea.append(routeTitle.cloneNode(true));
     hitArea.addEventListener("click", jump);
     p.after(hitArea);
     if (aligned && labelEls[i]) labelEls[i].addEventListener("click", jump);

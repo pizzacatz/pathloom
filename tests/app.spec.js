@@ -303,7 +303,7 @@ test('canvas uses full height and panels collapse independently without changing
   const stage = await page.locator('#stage').boundingBox();
   expect(stage.height).toBeGreaterThan(850);
   expect(stage.width).toBe(1440);
-  await expect(page.locator('.hl-cur')).toContainText('Mara Vale');
+  await expect(page.locator('.hl-cur')).toHaveCount(0);
   await page.locator('#zin').click();
   const before = await page.evaluate(() => captureView());
   await openSource(page);
@@ -372,7 +372,13 @@ test('line click follows the straight route for 500 ms, preserves zoom and lands
   const result = await page.evaluate(() => {
     const path = stage.querySelector('path.LS-Decision.LE-Setup'), viewport = stage.querySelector('.svg-pan-zoom_viewport');
     const matrix = viewport.getCTM().inverse().multiply(path.getCTM());
-    const curve = Array.from({ length: 101 }, (_, i) => path.getPointAtLength(path.getTotalLength()*i/100).matrixTransform(matrix));
+    const center = id => {
+      const node=stage.querySelector('g.node[data-id="'+id+'"]'), box=node.getBBox();
+      return new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(viewport.getCTM().inverse().multiply(node.getCTM()));
+    };
+    const source=center('Decision'), destination=center('Setup');
+    // The flight includes the node centers, not just the clipped visible line.
+    const curve = Array.from({length:201},(_,i)=>({x:source.x+(destination.x-source.x)*i/200,y:source.y+(destination.y-source.y)*i/200}));
     const middle = window.flightSamples.slice(Math.floor(window.flightSamples.length*.3), Math.floor(window.flightSamples.length*.7));
     const curveDistance = Math.max(...middle.map(sample => Math.min(...curve.map(point => Math.hypot(sample.x-point.x, sample.y-point.y)))));
     const node = stage.querySelector('.hl-cur').getBoundingClientRect(), canvas = stage.getBoundingClientRect();
@@ -546,4 +552,32 @@ test('straight junction arrows retain visible markers and isolated overview mask
   await page.locator('#overview-toggle').click();
   const duplicateIds = await page.locator('#overview-map [id]').evaluateAll(elements => elements.map(e=>e.id).filter((id,index,ids)=>ids.indexOf(id)!==index));
   expect(duplicateIds).toEqual([]);
+});
+
+test('blocked straight connections move their destination without creating overlaps', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page, 'flowchart TD\nA[Start] --> B[Middle] --> C[Finish]\nA --> C');
+  await expect(page.locator('#status')).toContainText('up to date');
+  await expect(page.locator('#stage g.node[data-id="C"]')).toHaveAttribute('data-layout-moved','true');
+  await expect(page.locator('#stage g.node[data-id="A"]')).not.toHaveAttribute('data-layout-moved');
+  await expect(page.locator('#stage g.node[data-id="B"]')).not.toHaveAttribute('data-layout-moved');
+  await expect(page.locator('#stage svg')).toHaveAttribute('data-routing-exceptions','0');
+  const clear = await page.evaluate(() => {
+    const node = stage.querySelector('g.node[data-id="B"]'), path = stage.querySelector('path.LS-A.LE-C[data-straight-routed]');
+    const shapes = [...node.querySelectorAll('rect,polygon,path')].filter(shape => !shape.closest('.label'));
+    return Array.from({length:101},(_,i) => path.getPointAtLength(path.getTotalLength()*i/100)).every(point =>
+      shapes.every(shape => !shape.isPointInFill(point.matrixTransform(path.getCTM()).matrixTransform(shape.getCTM().inverse()))));
+  });
+  expect(clear).toBe(true);
+});
+
+test('unresolved placements remain marked straight-line exceptions', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page, 'flowchart TD\nA[Start] --> B['+'W'.repeat(600)+'] --> C[Finish]\nA --> C');
+  await expect(page.locator('#status')).toContainText('up to date');
+  const edge=page.locator('#stage path.LS-A.LE-C[data-straight-routed]');
+  await expect(edge).toHaveAttribute('data-routing-exception','true');
+  await expect(edge.locator('title')).toContainText('Layout exception');
+  await expect(edge).toHaveAttribute('marker-end', /url/);
+  expect(await edge.evaluate(path => (path.getAttribute('d').match(/L/g)||[]).length)).toBe(1);
 });

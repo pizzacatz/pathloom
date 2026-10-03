@@ -111,7 +111,7 @@ path.hl-edge { stroke:var(--accent) !important; stroke-width:3px !important; }
     <div class="panel-head"><h2>Help</h2><button id="help-close" aria-label="Close help panel">×</button></div>
     <div class="panel-content">
       <p><strong>Navigate.</strong> Start jumps to the first step at actual size. Clear view removes dimming and highlighting without moving the camera. Drag to pan; use Fit to see the whole chart. Select a node to reveal its next steps. Click a connecting line or its label for a 500 ms flyover to its destination.</p>
-      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Moving between connected steps uses the 500 ms flyover; Back follows the line in reverse. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear view removes selection without moving the view.</p>
+      <p><strong>Follow a path.</strong> Open Path for Back, Next, and branch choices. Destinations shift to clear blocked straight connections. If placement cannot be resolved, hover the line or branch choice for its layout exception. Moving between connected steps uses the 500 ms flyover; Back follows the line in reverse. Jump to step lets you select any node. With the diagram focused, arrow keys navigate, F fits, +/− zoom, and 0 restores actual size. Clear view removes selection without moving the view.</p>
       <p><strong>Workspace.</strong> Source, Path, Help, and Overview each collapse independently on the left. On narrow screens panels open as temporary drawers. Escape closes a drawer and returns focus to its control.</p>
       <p><strong>Write.</strong> Open Source. Start with <code>flowchart TD</code>, then connect steps: <code>A[Request] --> B{Approved?}</code>. A labeled branch looks like <code>B -->|Yes| C[Done]</code>.</p>
       <p><strong>Keep or share.</strong> Download source saves editable Mermaid text. Export viewer validates and downloads an interactive offline HTML file. Download source for a portable backup.</p>
@@ -2164,6 +2164,7 @@ function routeFlowchart(svg, graph) {
   const inverse = root.getCTM().inverse(),
     nodes = new Map();
   const ns = "http://www.w3.org/2000/svg";
+  const domMatrix = (m) => new DOMMatrix([m.a, m.b, m.c, m.d, m.e, m.f]);
   svg.querySelectorAll("g.node").forEach((node) => {
     const id = node.id.replace(/^flowchart-/, "").replace(/-\d+$/, "");
     const box = node.getBBox(),
@@ -2186,8 +2187,187 @@ function routeFlowchart(svg, graph) {
           new DOMPoint(point.x, point.y).matrixTransform(inverse),
         ),
       );
-    nodes.set(id, { center, shapes, contains });
+    const corners = [
+      [box.x, box.y],
+      [box.x + box.width, box.y],
+      [box.x, box.y + box.height],
+      [box.x + box.width, box.y + box.height],
+    ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(matrix));
+    const bounds = {
+      left: Math.min(...corners.map((p) => p.x)),
+      right: Math.max(...corners.map((p) => p.x)),
+      top: Math.min(...corners.map((p) => p.y)),
+      bottom: Math.max(...corners.map((p) => p.y)),
+    };
+    const parentToRoot = inverse.multiply(node.parentElement.getCTM());
+    nodes.set(id, {
+      center,
+      shapes,
+      contains,
+      bounds,
+      node,
+      originalCenter: { x: center.x, y: center.y },
+      originalBounds: { ...bounds },
+      parentToRoot: domMatrix(parentToRoot),
+      local: domMatrix(
+        node.parentElement.getCTM().inverse().multiply(node.getCTM()),
+      ),
+    });
   });
+  const connections = [...svg.querySelectorAll("g.edgePaths path")]
+    .map((path) => {
+      const edge = graph.find(
+        (edge) =>
+          path.classList.contains("LS-" + edge.start) &&
+          path.classList.contains("LE-" + edge.end),
+      );
+      return edge && nodes.has(edge.start) && nodes.has(edge.end)
+        ? { path, edge }
+        : null;
+    })
+    .filter(Boolean);
+  function blockedBy(edge) {
+    const a = nodes.get(edge.start).center,
+      b = nodes.get(edge.end).center;
+    if (edge.start === edge.end) return [];
+    return [...nodes]
+      .filter(([id, node]) => {
+        if (id === edge.start || id === edge.end) return false;
+        // Conservative slab intersection leaves a little breathing room around
+        // the complete shape, avoiding narrow and near-tangent crossings.
+        let enter = 0,
+          leave = 1;
+        const box = node.bounds;
+        for (const [axis, low, high] of [
+          ["x", box.left - 6, box.right + 6],
+          ["y", box.top - 6, box.bottom + 6],
+        ]) {
+          const delta = b[axis] - a[axis];
+          if (Math.abs(delta) < 1e-9) {
+            if (a[axis] <= low || a[axis] >= high) return false;
+          } else {
+            const t1 = (low - a[axis]) / delta,
+              t2 = (high - a[axis]) / delta;
+            enter = Math.max(enter, Math.min(t1, t2));
+            leave = Math.min(leave, Math.max(t1, t2));
+            if (enter >= leave) return false;
+          }
+        }
+        return enter < leave;
+      })
+      .map(([id]) => id);
+  }
+  function place(node, x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y))
+      throw new Error("Invalid destination placement.");
+    node.center = { x, y };
+    const dx = x - node.originalCenter.x,
+      dy = y - node.originalCenter.y,
+      b = node.originalBounds;
+    node.bounds = {
+      left: b.left + dx,
+      right: b.right + dx,
+      top: b.top + dy,
+      bottom: b.bottom + dy,
+    };
+  }
+  const score = () =>
+    connections.reduce((total, { edge }) => total + blockedBy(edge).length, 0);
+  let collisions = score();
+  // Move destinations only. Accept a move only if it reduces the global
+  // crossing count without overlapping nodes or reversing existing levels.
+  for (let pass = 0; collisions && pass < 32; pass++) {
+    let improved = false;
+    for (const { edge } of connections) {
+      if (!blockedBy(edge).length) continue;
+      const target = nodes.get(edge.end),
+        before = { x: target.center.x, y: target.center.y };
+      const step = Math.max(100, target.bounds.right - target.bounds.left + 40);
+      let best = null;
+      const candidates = [];
+      for (const dy of [0, 100, 200, 400])
+        for (const dx of [
+          -step,
+          step,
+          -step * 2,
+          step * 2,
+          -step * 4,
+          step * 4,
+          -step * 8,
+          step * 8,
+        ])
+          candidates.push({ x: before.x + dx, y: before.y + dy });
+      candidates.sort(
+        (a, b) =>
+          Math.hypot(a.x - before.x, a.y - before.y) -
+          Math.hypot(b.x - before.x, b.y - before.y),
+      );
+      for (const candidate of candidates) {
+        place(target, candidate.x, candidate.y);
+        const overlap = [...nodes.values()].some(
+          (other) =>
+            other !== target &&
+            target.bounds.left < other.bounds.right + 20 &&
+            target.bounds.right > other.bounds.left - 20 &&
+            target.bounds.top < other.bounds.bottom + 20 &&
+            target.bounds.bottom > other.bounds.top - 20,
+        );
+        const flipped = connections.some(({ edge: e }) => {
+          if (e.start === e.end || (e.start !== edge.end && e.end !== edge.end))
+            return false;
+          const source = nodes.get(e.start),
+            destination = nodes.get(e.end),
+            original = destination.originalCenter.y - source.originalCenter.y,
+            current = destination.center.y - source.center.y;
+          return Math.abs(original) > 1 && original * current <= 0;
+        });
+        if (overlap || flipped || blockedBy(edge).length) continue;
+        const next = score();
+        if (next < collisions && (!best || next < best.score))
+          best = { ...candidate, score: next };
+        if (next === 0) break;
+      }
+      place(target, before.x, before.y);
+      if (best) {
+        place(target, best.x, best.y);
+        collisions = best.score;
+        improved = true;
+        const dx = best.x - target.originalCenter.x,
+          dy = best.y - target.originalCenter.y,
+          matrix = target.parentToRoot
+            .inverse()
+            .multiply(new DOMMatrix().translate(dx, dy))
+            .multiply(target.parentToRoot)
+            .multiply(target.local);
+        target.node.setAttribute(
+          "transform",
+          `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`,
+        );
+        target.node.dataset.layoutMoved = "true";
+        if (!collisions) break;
+      }
+    }
+    if (!improved) break;
+  }
+  // Refresh shape coordinate frames after the accepted node translations.
+  for (const node of nodes.values())
+    for (const shape of node.shapes)
+      shape.inverse = shape.shape.getCTM().inverse().multiply(root.getCTM());
+  let exceptions = 0;
+  for (const { path, edge } of connections) {
+    const blockers = blockedBy(edge);
+    if (!blockers.length) continue;
+    path.dataset.routingException = "true";
+    path.dataset.routingBlockers = blockers.join(",");
+    const title = document.createElementNS(ns, "title");
+    title.textContent =
+      "Layout exception: no clear destination placement found; this straight connection crosses " +
+      blockers.join(", ") +
+      ".";
+    path.append(title);
+    exceptions++;
+  }
+  svg.dataset.routingExceptions = String(exceptions);
   let defs = svg.querySelector("defs");
   if (!defs) {
     defs = document.createElementNS(ns, "defs");
@@ -2694,6 +2874,8 @@ async function renderGraph() {
       const button = document.createElement("button");
       const labels = graph.filter(edge => edge.start === current && edge.end === target).map(edge => String(edge.text || "").replace(/<[^>]*>/g, "")).filter(Boolean);
       button.textContent = (labels.length ? [...new Set(labels)].join(" / ") + ": " : "Next: ") + (nodeEls[target].textContent.trim() || target);
+      const exception = tracedEdges.find(edge => edge.start === current && edge.end === target && edge.path.dataset.routingException);
+      if (exception) button.title = exception.path.querySelector("title")?.textContent || "Layout exception";
       button.onclick = () => followTo(target);
       branches.appendChild(button);
     });
@@ -2747,6 +2929,8 @@ async function renderGraph() {
     hitArea.setAttribute("vector-effect", "non-scaling-stroke");
     hitArea.setAttribute("pointer-events", "stroke");
     hitArea.setAttribute("aria-hidden", "true");
+    const routeTitle = p.querySelector("title");
+    if (routeTitle) hitArea.append(routeTitle.cloneNode(true));
     hitArea.addEventListener("click", jump);
     p.after(hitArea);
     if (aligned && labelEls[i]) labelEls[i].addEventListener("click", jump);
