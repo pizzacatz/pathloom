@@ -67,6 +67,10 @@ function routeFlowchart(svg, graph) {
         ]),
       ),
     ].sort((a, b) => a - b);
+    const leftLane = Math.min(...bounds.map((b) => b.left)) - 80 - clearance;
+    const rightLane = Math.max(...bounds.map((b) => b.right)) + 80 + clearance;
+    xs.push(leftLane, rightLane);
+    xs.sort((a, b) => a - b);
     const nx = xs.length;
     const point = (id) => ({ x: xs[id % nx], y: ys[Math.floor(id / nx)] });
     const idOf = (p) => ys.indexOf(p.y) * nx + xs.indexOf(p.x);
@@ -91,7 +95,7 @@ function routeFlowchart(svg, graph) {
       visibility.set(key, !blocked);
       return !blocked;
     }
-    function search(start, end) {
+    function search(start, end, downward = false) {
       const source = idOf(start),
         target = idOf(end),
         heap = [],
@@ -159,6 +163,7 @@ function routeFlowchart(svg, graph) {
         ];
         for (const [xx, yy, dir] of adjacent) {
           if (xx < 0 || xx >= nx || yy < 0 || yy >= ys.length) continue;
+          if (downward && yy < y) continue;
           const id = yy * nx + xx;
           if (!segmentFree(current.id, id)) continue;
           const p = point(current.id),
@@ -195,7 +200,31 @@ function routeFlowchart(svg, graph) {
         y: reversed ? source.top - portGap : source.bottom + portGap,
       };
       const end = { x: targetX, y: target.top - portGap };
-      const middle = search(start, end);
+      const downward = !reversed && target.top - 5 > source.bottom;
+      if (downward && start.y > end.y) return null;
+      let middle;
+      if (downward) middle = search(start, end, true);
+      else {
+        // Return connections rise in a lane outside the entire chart instead
+        // of weaving through the forward flow. Try the nearer side first.
+        const lanes = [leftLane, rightLane].sort(
+          (a, b) =>
+            Math.abs(a - sourceX) +
+            Math.abs(a - targetX) -
+            Math.abs(b - sourceX) -
+            Math.abs(b - targetX),
+        );
+        for (const x of lanes) {
+          const departure = { x, y: start.y },
+            approach = { x, y: end.y };
+          const outbound = search(start, departure),
+            inbound = search(approach, end);
+          if (outbound && inbound) {
+            middle = [...outbound, approach, ...inbound.slice(1)];
+            break;
+          }
+        }
+      }
       if (!middle) return null;
       // Mermaid's arrow marker extends 5 user units beyond the path endpoint.
       const points = [
@@ -234,7 +263,7 @@ function routeFlowchart(svg, graph) {
         );
       });
       if (crossesNode) return null;
-      routes.push({ path, points: compact });
+      routes.push({ path, points: compact, downward });
     }
     return routes;
   }
@@ -287,15 +316,13 @@ function routeFlowchart(svg, graph) {
       curveFree([middle, bcd, cd, d], depth + 1)
     );
   }
-  function flowingCurves(points, reversed) {
+  function flowingCurves(points, reversed, downward) {
     const start = points[0],
       end = points[points.length - 1];
     const distance = Math.hypot(end.x - start.x, end.y - start.y);
-    const handle = Math.max(
-      8,
-      Math.abs(end.y - start.y) * 0.5,
-      distance * 0.25,
-    );
+    const handle = downward
+      ? (end.y - start.y) * 0.4
+      : Math.max(8, Math.abs(end.y - start.y) * 0.5, distance * 0.25);
     // Prefer a single flowing S-curve with vertical endpoint tangents. Loops
     // and blocked direct connections instead follow the obstacle corridor.
     const direct = [
@@ -304,7 +331,7 @@ function routeFlowchart(svg, graph) {
       { x: end.x, y: end.y - handle },
       end,
     ];
-    if (distance > 0 && curveFree(direct)) return [direct];
+    if (downward && distance > 0 && curveFree(direct)) return [direct];
     let polygon = points;
     for (let attempt = 0; attempt < 10; attempt++) {
       const curves = [];
@@ -345,7 +372,7 @@ function routeFlowchart(svg, graph) {
     );
   }
   const allPoints = [];
-  routes.forEach(({ path, points }) => {
+  routes.forEach(({ path, points, downward }) => {
     const matrix = path.getCTM().inverse().multiply(coordinateRoot.getCTM());
     const commands = [];
     const command = (type, ...vertices) => {
@@ -359,7 +386,11 @@ function routeFlowchart(svg, graph) {
             .join(" "),
       );
     };
-    const curves = flowingCurves(points, path.hasAttribute("marker-start"));
+    const curves = flowingCurves(
+      points,
+      path.hasAttribute("marker-start"),
+      downward,
+    );
     command("M", curves[0][0]);
     curves.forEach((curve) => command("C", ...curve.slice(1)));
     path.setAttribute("d", commands.join(" "));

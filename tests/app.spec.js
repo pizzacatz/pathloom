@@ -482,11 +482,18 @@ for (const fixture of [
           const source = nodes.find(node => path.classList.contains('LS-' + node.id));
           if (Math.abs(start.x-(source.rect.left+source.rect.width/2))>1 || start.y>source.rect.top+1 || after.y>=start.y) errors.push('Not a top start arrow: '+path.id);
         }
+        const source = nodes.find(node => path.classList.contains('LS-' + node.id));
+        const forward = !path.hasAttribute('marker-start') && target.rect.top > source.rect.bottom;
+        let previousY = path.getPointAtLength(0).matrixTransform(matrix).y, outside = false;
         for (let i=1;i<200;i++) {
           const point = path.getPointAtLength(length*i/200).matrixTransform(matrix);
+          if (forward && point.y < previousY - .01) errors.push('Forward edge rises: '+path.id);
+          previousY = point.y;
+          outside ||= point.x < Math.min(...nodes.map(n => n.rect.left)) - 1 || point.x > Math.max(...nodes.map(n => n.rect.right)) + 1;
           const crossed = nodes.find(node => point.x>node.rect.left+.5 && point.x<node.rect.right-.5 && point.y>node.rect.top+.5 && point.y<node.rect.bottom-.5);
           if(crossed) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
         }
+        if (!forward && !outside) errors.push('Return edge lacks outer lane: '+path.id);
       }
       return errors;
     });

@@ -102,7 +102,7 @@ else try {
 saveSource();
 
 mermaid.initialize({ startOnLoad:false, theme:"dark", securityLevel:"strict",
-  flowchart:{ useMaxWidth:false, htmlLabels:true } });
+  flowchart:{ useMaxWidth:false, htmlLabels:true, rankSpacing:140 } });
 
 // ---- persistent frame loop so labels track every pan/zoom, across re-renders ----
 let VP = null;

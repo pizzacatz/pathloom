@@ -23,3 +23,5 @@ Environment limits: Chromium and Firefox verified; WebKit fails to launch becaus
 Rounded routing verification: all 56 Chromium/Firefox checks passed. Branches, loops, bidirectional edges, and tight spacing include quadratic bends while preserving top-entry stems and avoiding node interiors. The default chart was also visually reviewed.
 
 Flowing Bézier update: 16 focused checks passed across Chromium and Firefox, covering curves around node interiors, top-entry arrowheads, self/return loops, bidirectional edges, tight spacing, large diagrams, exports, Start, and the 500 ms flyover. Default-chart curves were visually reviewed. Each connection gets its own clearance corridor; paths use cubic Béziers throughout.
+
+Gentler vertical flow: all 56 Chromium/Firefox checks passed, plus eight routing checks with added downward-monotonicity and outer-return-lane assertions. Default rank spacing increased to 140; explicit source overrides remain supported. The taller default chart was visually reviewed.
