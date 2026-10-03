@@ -355,6 +355,7 @@ function routeFlowchart(svg, graph) {
   routes.forEach(({ path, points, downward, edge }, index) => {
     const centered =
       branching.has(edge.start) && !path.hasAttribute("marker-start");
+    const centeredTarget = branching.has(edge.end);
     ignoredSource = centered ? boxes.get(edge.start) : null;
     if (centered) {
       points = [
@@ -379,10 +380,18 @@ function routeFlowchart(svg, graph) {
       );
     };
     points = straightRoute(points, downward);
+    if (centeredTarget) {
+      const target = boxes.get(edge.end);
+      points.push({
+        x: (target.left + target.right) / 2,
+        y: (target.top + target.bottom) / 2,
+      });
+      path.dataset.centerTarget = "true";
+    }
     points.forEach((point, index) => command(index ? "L" : "M", point));
     path.setAttribute("d", commands.join(" "));
-    if (centered) {
-      // Keep the center-origin geometry for tracing, but hide the portion
+    if (centered || centeredTarget) {
+      // Keep the centered endpoint geometry for tracing, but hide the portion
       // inside the source shape even when that node is dimmed or transparent.
       const ns = "http://www.w3.org/2000/svg";
       let defs = svg.querySelector("defs");
@@ -397,10 +406,17 @@ function routeFlowchart(svg, graph) {
       const vertices = points.map((p) =>
         new DOMPoint(p.x, p.y).matrixTransform(matrix),
       );
-      const sourceNode = nodeElements.get(edge.start);
-      const shapes = [
-        ...sourceNode.querySelectorAll("rect,polygon,circle,ellipse,path"),
-      ].filter((shape) => !shape.closest(".label"));
+      const maskedNodes = [
+        ...new Set([
+          ...(centered ? [nodeElements.get(edge.start)] : []),
+          ...(centeredTarget ? [nodeElements.get(edge.end)] : []),
+        ]),
+      ];
+      const shapes = maskedNodes
+        .flatMap((node) => [
+          ...node.querySelectorAll("rect,polygon,circle,ellipse,path"),
+        ])
+        .filter((shape) => !shape.closest(".label"));
       const shapePoints = shapes.flatMap((shape) => {
         const b = shape.getBBox(),
           m = path.getCTM().inverse().multiply(shape.getCTM());
@@ -438,7 +454,7 @@ function routeFlowchart(svg, graph) {
       });
       defs.append(mask);
       path.setAttribute("mask", `url(#${mask.id})`);
-      path.dataset.centerRouted = "true";
+      if (centered) path.dataset.centerRouted = "true";
     }
     path.style.strokeLinejoin = "miter";
     path.dataset.topRouted = "true";

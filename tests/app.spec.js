@@ -478,7 +478,7 @@ for (const fixture of [
         const end = path.getPointAtLength(length).matrixTransform(matrix);
         const previous = path.getPointAtLength(Math.max(0,length-2)).matrixTransform(matrix);
         const target = nodes.find(node => path.classList.contains('LE-' + node.id));
-        if (Math.abs(end.x-(target.rect.left+target.rect.width/2))>1 || end.y>target.rect.top+1 || previous.y>=end.y || Math.abs(previous.x-end.x)>1) errors.push('Not a top entry: '+path.id);
+        if (Math.abs(end.x-(target.rect.left+target.rect.width/2))>1 || (path.dataset.centerTarget === 'true' ? Math.abs(end.y-(target.rect.top+target.rect.height/2))>1 : end.y>target.rect.top+1) || previous.y>=end.y || Math.abs(previous.x-end.x)>1) errors.push('Not a top entry: '+path.id);
         if (path.hasAttribute('marker-start')) {
           const start = path.getPointAtLength(0).matrixTransform(matrix), after = path.getPointAtLength(2).matrixTransform(matrix);
           const source = nodes.find(node => path.classList.contains('LS-' + node.id));
@@ -493,7 +493,7 @@ for (const fixture of [
           previousY = point.y;
           outside ||= point.x < Math.min(...nodes.map(n => n.rect.left)) - 1 || point.x > Math.max(...nodes.map(n => n.rect.right)) + 1;
           const crossed = nodes.find(node => point.x>node.rect.left+.5 && point.x<node.rect.right-.5 && point.y>node.rect.top+.5 && point.y<node.rect.bottom-.5);
-          if(crossed && !(path.dataset.centerRouted === 'true' && crossed.id === source.id && path.hasAttribute('mask'))) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
+          if(crossed && !(((path.dataset.centerRouted === 'true' && crossed.id === source.id) || (path.dataset.centerTarget === 'true' && crossed.id === target.id)) && path.hasAttribute('mask'))) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
         }
         if (!forward && !outside) errors.push('Return edge lacks outer lane: '+path.id);
       }
@@ -556,6 +556,14 @@ test('branches fan out from source centers with masked interiors and isolated ov
   result.forEach(edge => {expect(edge.distance).toBeLessThan(.1);expect(edge.mask).toBe(true);expect(edge.overview).toBe(true);});
   expect(result[0].fan * result[1].fan).toBeLessThan(0);
   await expect(page.locator('#stage path.LS-A[data-top-routed]')).not.toHaveAttribute('data-center-routed');
+  await expect(page.locator('#stage path.LE-B[data-top-routed]')).toHaveAttribute('data-center-target', 'true');
+  const incomingDistance = await page.locator('#stage path.LE-B[data-top-routed]').evaluate(path => {
+    const target = stage.querySelector('g.node[data-id="B"]'), box = target.getBBox();
+    const center = new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(target.getCTM());
+    const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(path.getCTM());
+    return Math.hypot(end.x-center.x,end.y-center.y);
+  });
+  expect(incomingDistance).toBeLessThan(.1);
   await expect(page.locator('#overview-map')).toBeHidden();
   await page.locator('#overview-toggle').click();
   const duplicateIds = await page.locator('#overview-map [id]').evaluateAll(elements => elements.map(e=>e.id).filter((id,index,ids)=>ids.indexOf(id)!==index));
