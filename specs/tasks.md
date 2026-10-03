@@ -7,6 +7,7 @@
 - [x] Preserve canvas position and valid trace state across rendering/layout changes.
 - [x] Make the canvas dominant with one compact strip, collapsible sidebars, mobile drawers, and an optional overview.
 - [x] Move textual current/next steps, branch buttons, and collapsible step selection into the Path sidebar.
+- [x] Route all flowchart arrowheads into top ports and prevent edges from passing through node bounds, including loops and tight spacing.
 - [x] Move every panel and overview to the left; add top-strip Start at actual size and Clear view.
 - [x] Add cancellable 500 ms edge-curve flyovers with constant zoom, wide click targets, and reduced-motion handling.
 - [x] Distinguish empty, stale, initial error, and successful previews with actionable guidance.

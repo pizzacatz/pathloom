@@ -18,6 +18,7 @@ The labeled example is fictional: Mara Vale reviews an Alderwick Systems workspa
 - **Start** selects the first entry step, resets the trace history, switches to actual size, and centers that step. It works even when a large chart needs zoom beyond the default fit-based limit. **Clear view** removes selection, dimming, and highlighting without moving the camera.
 - **Fit**, **Actual size**, zoom buttons, and dragging control the canvas. Re-rendering, resizing, and panel toggling preserve the content point at the canvas center and the scale where possible. The optional **Overview** map shows the viewport and lets you click to pan; it also collapses.
 - Select a diagram node or open **Path → Jump to step** for the labeled **Step** list. The current step and available next steps also appear as text. Use branch buttons at decisions, **Next** for one successor, and **Back** to retrace your path.
+- Flowchart arrowheads enter the top of destination nodes. Connections use right-angle routes around every node’s bounds, including return loops and self-loops; they do not pass behind boxes. Two-headed connections enter both nodes from above. Tight spacing reduces routing clearance; impossible overlapping layouts show a recoverable error and preserve the previous diagram.
 - Clicking a connecting line or its label flies along the actual edge curve for 500 ms to the destination, keeping zoom unchanged. Direct node selection and Back/Next pan only enough to bring the node into view. Dragging, zooming, layout changes, editing, or another selection cancel a flight. Reduced-motion preferences skip the animation.
 - Nodes support Tab and Enter/Space. With the diagram focused, arrows navigate, F fits, +/− zoom, and 0 restores actual size. Current selection is exposed programmatically; successor outlines are dashed. Focused nodes remain fully visible.
 - **Clear view** clears selection/history without moving the canvas. Rendering preserves selected node and history when their IDs still exist.
@@ -25,7 +26,7 @@ The labeled example is fictional: Mara Vale reviews an Alderwick Systems workspa
 
 ## Share a viewer
 
-**Export viewer** validates the exact current source by rendering it before downloading `flowchart.html`. Empty or invalid source cannot produce a broken export. Editing during validation cancels that export; retry with the updated source. Repeated activation is disabled while validating.
+**Export viewer** validates the exact current source and its routed connections by rendering it before downloading `flowchart.html`. Empty or invalid source cannot produce a broken export. Editing during validation cancels that export; retry with the updated source. Repeated activation is disabled while validating.
 
 The viewer contains the source and all runtime code, works offline, hides authoring controls, and never uses browser storage. Its errors open the Path sidebar. A download-started message reports the browser handoff, not a guarantee that a file was saved.
 
@@ -45,6 +46,7 @@ Python 3 is required to build; Node.js is needed only for tests. Neither is requ
 | --- | --- |
 | `src/shell.html` | Layout, design tokens, accessible controls |
 | `src/app.js` | Rendering, persistence, trace, import, export |
+| `src/routing.js` | Top-entry connections and obstacle avoidance |
 | `vendor/` | Existing runtime bundles and provenance notes |
 | `scripts/build.py` | Deterministic app and fictional viewer assembly |
 | `tests/app.spec.js` | Behavior, layout, and automated accessibility checks |

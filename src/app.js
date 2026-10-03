@@ -158,15 +158,22 @@ async function renderGraph() {
   if (!stage.clientWidth || !stage.clientHeight) { pendingPreview = true; return false; }
   const savedView = captureView();
 
-  cancelFlyover();
-  VP = null;
-  if (_panZoom) { try { _panZoom.destroy(); } catch (e) {} _panZoom = null; }
-  stage.innerHTML = svg;
-  const svgEl = stage.querySelector("svg");
-  if (!svgEl) { errEl.textContent = "No diagram produced."; return; }
+  const candidate = document.createElement("div");
+  candidate.style.cssText = "position:absolute;inset:0;visibility:hidden;pointer-events:none";
+  candidate.innerHTML = svg;
+  stage.append(candidate);
+  const svgEl = candidate.querySelector("svg");
+  if (!svgEl) { candidate.remove(); showError(new Error("No diagram produced.")); return false; }
   svgEl.removeAttribute("style");
   svgEl.setAttribute("width", "100%");
   svgEl.setAttribute("height", "100%");
+  try { routeFlowchart(svgEl, graph); }
+  catch (error) { candidate.remove(); showError(error); return false; }
+
+  cancelFlyover();
+  VP = null;
+  if (_panZoom) { try { _panZoom.destroy(); } catch {} _panZoom = null; }
+  stage.replaceChildren(svgEl);
 
   const panZoom = svgPanZoom(svgEl, { zoomEnabled:true, panEnabled:true, controlIconsEnabled:false,
     dblClickZoomEnabled:false,
@@ -393,6 +400,7 @@ async function renderGraph() {
     p.addEventListener("click", jump);
     const hitArea = p.cloneNode(false);
     hitArea.removeAttribute("id");
+    hitArea.removeAttribute("data-top-routed");
     hitArea.removeAttribute("marker-start"); hitArea.removeAttribute("marker-end");
     hitArea.removeAttribute("style");
     hitArea.setAttribute("class", "edge-hit");
@@ -568,7 +576,17 @@ byId("export").onclick = async () => {
     if (!source.trim()) throw new Error("Enter a Mermaid diagram before exporting.");
     // Validate actual renderability, not just parseability. Mermaid serializes renders.
     const id = "exportCheck" + Date.now();
-    try { await mermaid.render(id, source); }
+    try {
+      const diagram = await mermaid.mermaidAPI.getDiagramFromText(source);
+      const edges = diagram.type.startsWith("flowchart") && typeof diagram.db.getEdges === "function" ? diagram.db.getEdges() : [];
+      const result = await mermaid.render(id, source);
+      const validation = document.createElement("div");
+      validation.style.cssText = "position:absolute;inset:0;visibility:hidden;pointer-events:none";
+      validation.innerHTML = result.svg;
+      stage.append(validation);
+      try { routeFlowchart(validation.querySelector("svg"), Array.isArray(edges) ? edges : []); }
+      finally { validation.remove(); }
+    }
     finally { document.getElementById("d" + id)?.remove(); }
     if (source !== srcEl.value) { setStatus("Source changed during validation · Export again when ready"); return; }
     const clone = document.documentElement.cloneNode(true);

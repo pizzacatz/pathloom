@@ -421,12 +421,10 @@ test('Start centers the first entry step at actual size and Clear view restores 
   await page.locator('#start').click();
   await expect(page.locator('#stage .hl-cur')).toContainText('First step');
   expect(await page.evaluate(() => _panZoom.getSizes().realZoom)).toBeCloseTo(1, 4);
-  const centered = await page.evaluate(() => {
+  await expect.poll(() => page.evaluate(() => {
     const node = stage.querySelector('.hl-cur').getBoundingClientRect(), canvas = stage.getBoundingClientRect();
-    return { x:node.left+node.width/2-canvas.left-canvas.width/2, y:node.top+node.height/2-canvas.top-canvas.height/2 };
-  });
-  expect(Math.abs(centered.x)).toBeLessThan(2);
-  expect(Math.abs(centered.y)).toBeLessThan(2);
+    return Math.max(Math.abs(node.left+node.width/2-canvas.left-canvas.width/2), Math.abs(node.top+node.height/2-canvas.top-canvas.height/2));
+  })).toBeLessThan(2);
   await expect(page.locator('#stage .dim')).not.toHaveCount(0);
   const before = await page.evaluate(() => captureView());
   await page.locator('#reset').click();
@@ -459,3 +457,40 @@ test('all sidebars and the overview open on the left', async ({ page }) => {
     expect((await page.locator('#' + id).boundingBox()).x).toBe(0);
   }
 });
+
+for (const fixture of [
+  'flowchart TD\nA[Start] --> B{Decision}\nB -->|Yes| C[Accept]\nB -->|No| D[Review]\nD --> A\nC --> E[Done]\nA --> E',
+  'flowchart LR\nA[Start] --> B[Work] --> C[Done]\nC --> A\nB --> B',
+  'flowchart TD\nA[One] <--> B[Two]\nA --> B\nB --> C[Three]\nC --> A',
+  '%%{init: {"flowchart": {"rankSpacing": 18}}}%%\nflowchart TD\nA[Start] --> B[Work] --> C[Done]\nC --> A',
+]) {
+  test('routing enters tops and never crosses node interiors: ' + fixture.split('\n')[0] + fixture.length, async ({ page }) => {
+    await page.goto(appURL);
+    await render(page, fixture);
+    await expect(page.locator('#status')).toContainText('up to date');
+    const violations = await page.evaluate(() => {
+      const svg = stage.querySelector('svg'), errors = [];
+      const nodes = [...stage.querySelectorAll('g.node')].map(node => ({ id:node.dataset.id, rect:node.getBoundingClientRect() }));
+      for (const path of stage.querySelectorAll('g.edgePaths path[data-top-routed]')) {
+        const length = path.getTotalLength(), matrix = path.getScreenCTM();
+        const end = path.getPointAtLength(length).matrixTransform(matrix);
+        const previous = path.getPointAtLength(Math.max(0,length-2)).matrixTransform(matrix);
+        const target = nodes.find(node => path.classList.contains('LE-' + node.id));
+        if (Math.abs(end.x-(target.rect.left+target.rect.width/2))>1 || end.y>target.rect.top+1 || previous.y>=end.y || Math.abs(previous.x-end.x)>1) errors.push('Not a top entry: '+path.id);
+        if (path.hasAttribute('marker-start')) {
+          const start = path.getPointAtLength(0).matrixTransform(matrix), after = path.getPointAtLength(2).matrixTransform(matrix);
+          const source = nodes.find(node => path.classList.contains('LS-' + node.id));
+          if (Math.abs(start.x-(source.rect.left+source.rect.width/2))>1 || start.y>source.rect.top+1 || after.y>=start.y) errors.push('Not a top start arrow: '+path.id);
+        }
+        for (let i=1;i<200;i++) {
+          const point = path.getPointAtLength(length*i/200).matrixTransform(matrix);
+          const crossed = nodes.find(node => point.x>node.rect.left+.5 && point.x<node.rect.right-.5 && point.y>node.rect.top+.5 && point.y<node.rect.bottom-.5);
+          if(crossed) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
+        }
+      }
+      return errors;
+    });
+    expect(violations).toEqual([]);
+    await expect(page.locator('#stage g.edgePaths path[data-top-routed]')).not.toHaveCount(0);
+  });
+}

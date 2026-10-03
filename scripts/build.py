@@ -9,7 +9,7 @@ def build():
     shell = (ROOT / 'src/shell.html').read_text()
     app = (ROOT / 'src/app.js').read_text()
     scripts = '\n'.join('<script>\n' + (ROOT / name).read_text() + '\n</script>' for name in (
-        'vendor/mermaid.min.js', 'vendor/svg-pan-zoom.min.js', 'src/app.js'))
+        'vendor/mermaid.min.js', 'vendor/svg-pan-zoom.min.js', 'src/routing.js', 'src/app.js'))
     html = shell.replace('<!-- SCRIPTS -->', scripts)
     (ROOT / 'index.html').write_text(html)
     source = re.search(r'const DEFAULT_SRC = `([\s\S]*?)`;', app).group(1)
