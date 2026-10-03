@@ -534,8 +534,12 @@ function buildOverview(svg) {
   });
   // Prefix IDs and their references to keep markers and styles isolated from the main SVG.
   copy.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id);
-  const defs = svg.querySelector("defs")?.cloneNode(true);
-  if (defs) { defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs); }
+  const externalDefs = [...svg.querySelectorAll("defs")].filter(def => !content.contains(def));
+  const defs = externalDefs.length ? document.createElementNS("http://www.w3.org/2000/svg", "defs") : null;
+  if (defs) {
+    externalDefs.forEach(def => [...def.children].forEach(child => defs.append(child.cloneNode(true))));
+    defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs);
+  }
   for (const root of [copy, defs].filter(Boolean)) root.querySelectorAll("*").forEach(el => {
     for (const attr of Array.from(el.attributes)) {
       if (attr.value.includes("url(#")) el.setAttribute(attr.name, attr.value.replace(/url\(#/g, "url(#overview-"));

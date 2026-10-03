@@ -27,3 +27,5 @@ Flowing Bézier update: 16 focused checks passed across Chromium and Firefox, co
 Gentler vertical flow: all 56 Chromium/Firefox checks passed, plus eight routing checks with added downward-monotonicity and outer-return-lane assertions. Default rank spacing increased to 140; explicit source overrides remain supported. The taller default chart was visually reviewed.
 
 Path transitions: 12 focused Chromium/Firefox checks passed, covering Next, branch selection, keyboard traversal, reverse Back, cancellation without losing history, reduced motion, curve-following duration/geometry, and view preservation on rerender.
+
+Centered branches: focused Chromium/Firefox checks cover center-origin geometry, fanning in opposite directions, source-shape masks, isolated overview references, exports, accessibility, routing clearance, top-entry arrowheads, and forward/reverse flyovers. Center-origin segments inside their own source are intentionally masked; click tests use an exposed portion of the curve. The default chart was visually reviewed.

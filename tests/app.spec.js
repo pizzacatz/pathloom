@@ -11,7 +11,7 @@ async function openPath(page, jump = false) {
   if (await page.locator('#trace').evaluate(el => el.classList.contains('hidden'))) await page.locator('#trace-toggle').click();
   if (jump) await page.locator('#jump').evaluate(el => { el.open = true; });
 }
-async function clickEdge(page, selector, fraction = .25) {
+async function clickEdge(page, selector, fraction = .6) {
   const point = await page.locator(selector).evaluate((edge, fraction) => {
     const point = edge.getPointAtLength(edge.getTotalLength() * fraction);
     const screen = point.matrixTransform(edge.getScreenCTM());
@@ -493,7 +493,7 @@ for (const fixture of [
           previousY = point.y;
           outside ||= point.x < Math.min(...nodes.map(n => n.rect.left)) - 1 || point.x > Math.max(...nodes.map(n => n.rect.right)) + 1;
           const crossed = nodes.find(node => point.x>node.rect.left+.5 && point.x<node.rect.right-.5 && point.y>node.rect.top+.5 && point.y<node.rect.bottom-.5);
-          if(crossed) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
+          if(crossed && !(path.dataset.centerRouted === 'true' && crossed.id === source.id && path.hasAttribute('mask'))) {errors.push('Crossed '+crossed.id+': '+path.id);break;}
         }
         if (!forward && !outside) errors.push('Return edge lacks outer lane: '+path.id);
       }
@@ -535,4 +535,29 @@ test('Path Next, branch, keyboard and Back animate along connections without cor
   await page.locator('#back').click();
   await expect(page.locator('.hl-cur')).toContainText('First');
   await expect(page.locator('#stage')).not.toHaveAttribute('aria-busy', 'true');
+});
+
+
+test('branches fan out from source centers with masked interiors and isolated overview masks', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page, 'flowchart TD\nA[Begin] --> B{Choose}\nB -->|Yes| C[Accept]\nB -->|No| D[Review]\nC --> E[Done]');
+  const result = await page.evaluate(() => {
+    const source = stage.querySelector('g.node[data-id="B"]'), box = source.getBBox(),
+      center = new DOMPoint(box.x+box.width/2,box.y+box.height/2).matrixTransform(source.getCTM());
+    return [...stage.querySelectorAll('g.edgePaths path.LS-B[data-top-routed]')].map(path => {
+      const start = path.getPointAtLength(0).matrixTransform(path.getCTM()),
+        quarter = path.getPointAtLength(path.getTotalLength()*.25).matrixTransform(path.getCTM());
+      const id = path.getAttribute('mask').slice(5,-1), mask = document.getElementById(id);
+      return {distance:Math.hypot(start.x-center.x,start.y-center.y), fan:quarter.x-center.x,
+        mask:!!mask?.querySelector('polygon'), overview:!!document.getElementById('overview-'+id)};
+    });
+  });
+  expect(result).toHaveLength(2);
+  result.forEach(edge => {expect(edge.distance).toBeLessThan(.1);expect(edge.mask).toBe(true);expect(edge.overview).toBe(true);});
+  expect(result[0].fan * result[1].fan).toBeLessThan(0);
+  await expect(page.locator('#stage path.LS-A[data-top-routed]')).not.toHaveAttribute('data-center-routed');
+  await expect(page.locator('#overview-map')).toBeHidden();
+  await page.locator('#overview-toggle').click();
+  const duplicateIds = await page.locator('#overview-map [id]').evaluateAll(elements => elements.map(e=>e.id).filter((id,index,ids)=>ids.indexOf(id)!==index));
+  expect(duplicateIds).toEqual([]);
 });

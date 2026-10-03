@@ -2166,8 +2166,10 @@ function routeFlowchart(svg, graph) {
   if (!coordinateRoot) return;
   const inverse = coordinateRoot.getCTM().inverse();
   const boxes = new Map();
+  const nodeElements = new Map();
   svg.querySelectorAll("g.node").forEach((node) => {
     const id = node.id.replace(/^flowchart-/, "").replace(/-\d+$/, "");
+    nodeElements.set(id, node);
     const box = node.getBBox(),
       matrix = inverse.multiply(node.getCTM());
     const corners = [
@@ -2198,6 +2200,15 @@ function routeFlowchart(svg, graph) {
     .filter(Boolean);
   if (!connections.length) return;
   const bounds = Array.from(boxes.values());
+  const branching = new Set(
+    [...boxes.keys()].filter(
+      (id) =>
+        new Set(
+          connections.filter((c) => c.edge.start === id).map((c) => c.edge.end),
+        ).size > 1,
+    ),
+  );
+  let ignoredSource = null;
   function routesWithClearance(clearance, selectedConnections) {
     const portGap = Math.max(clearance, 8);
     const obstacles = bounds.map((b) => ({
@@ -2421,7 +2432,7 @@ function routeFlowchart(svg, graph) {
         );
       });
       if (crossesNode) return null;
-      routes.push({ path, points: compact, downward });
+      routes.push({ path, points: compact, downward, edge });
     }
     return routes;
   }
@@ -2454,6 +2465,7 @@ function routeFlowchart(svg, graph) {
     if (
       !bounds.some(
         (b) =>
+          b !== ignoredSource &&
           left < b.right - 0.001 &&
           right > b.left + 0.001 &&
           top < b.bottom - 0.001 &&
@@ -2474,7 +2486,7 @@ function routeFlowchart(svg, graph) {
       curveFree([middle, bcd, cd, d], depth + 1)
     );
   }
-  function flowingCurves(points, reversed, downward) {
+  function flowingCurves(points, reversed, downward, centered) {
     const start = points[0],
       end = points[points.length - 1];
     const distance = Math.hypot(end.x - start.x, end.y - start.y);
@@ -2485,7 +2497,12 @@ function routeFlowchart(svg, graph) {
     // and blocked direct connections instead follow the obstacle corridor.
     const direct = [
       start,
-      { x: start.x, y: start.y + (reversed ? -handle : handle) },
+      centered
+        ? {
+            x: start.x + (end.x - start.x) * 0.35,
+            y: start.y + (end.y - start.y) * 0.25,
+          }
+        : { x: start.x, y: start.y + (reversed ? -handle : handle) },
       { x: end.x, y: end.y - handle },
       end,
     ];
@@ -2530,7 +2547,19 @@ function routeFlowchart(svg, graph) {
     );
   }
   const allPoints = [];
-  routes.forEach(({ path, points, downward }) => {
+  routes.forEach(({ path, points, downward, edge }, index) => {
+    const centered =
+      branching.has(edge.start) && !path.hasAttribute("marker-start");
+    ignoredSource = centered ? boxes.get(edge.start) : null;
+    if (centered) {
+      points = [
+        {
+          x: (ignoredSource.left + ignoredSource.right) / 2,
+          y: (ignoredSource.top + ignoredSource.bottom) / 2,
+        },
+        ...points.slice(1),
+      ];
+    }
     const matrix = path.getCTM().inverse().multiply(coordinateRoot.getCTM());
     const commands = [];
     const command = (type, ...vertices) => {
@@ -2548,10 +2577,70 @@ function routeFlowchart(svg, graph) {
       points,
       path.hasAttribute("marker-start"),
       downward,
+      centered,
     );
     command("M", curves[0][0]);
     curves.forEach((curve) => command("C", ...curve.slice(1)));
     path.setAttribute("d", commands.join(" "));
+    if (centered) {
+      // Keep the center-origin geometry for tracing, but hide the portion
+      // inside the source shape even when that node is dimmed or transparent.
+      const ns = "http://www.w3.org/2000/svg";
+      let defs = svg.querySelector("defs");
+      if (!defs) {
+        defs = document.createElementNS(ns, "defs");
+        coordinateRoot.prepend(defs);
+      }
+      const mask = document.createElementNS(ns, "mask");
+      mask.id = svg.id + "-branch-source-" + index;
+      mask.setAttribute("maskUnits", "userSpaceOnUse");
+      mask.setAttribute("maskContentUnits", "userSpaceOnUse");
+      const vertices = curves
+        .flat()
+        .map((p) => new DOMPoint(p.x, p.y).matrixTransform(matrix));
+      const sourceNode = nodeElements.get(edge.start);
+      const shapes = [
+        ...sourceNode.querySelectorAll("rect,polygon,circle,ellipse,path"),
+      ].filter((shape) => !shape.closest(".label"));
+      const shapePoints = shapes.flatMap((shape) => {
+        const b = shape.getBBox(),
+          m = path.getCTM().inverse().multiply(shape.getCTM());
+        return [
+          [b.x, b.y],
+          [b.x + b.width, b.y + b.height],
+        ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+      });
+      const extent = [...vertices, ...shapePoints];
+      const x = Math.min(...extent.map((p) => p.x)) - 16,
+        y = Math.min(...extent.map((p) => p.y)) - 16,
+        width = Math.max(...extent.map((p) => p.x)) - x + 16,
+        height = Math.max(...extent.map((p) => p.y)) - y + 16;
+      for (const [key, value] of Object.entries({ x, y, width, height }))
+        mask.setAttribute(key, value);
+      const background = document.createElementNS(ns, "rect");
+      for (const [key, value] of Object.entries({ x, y, width, height }))
+        background.setAttribute(key, value);
+      background.style.setProperty("fill", "white", "important");
+      mask.append(background);
+      shapes.forEach((shape) => {
+        const silhouette = shape.cloneNode(true),
+          m = path.getCTM().inverse().multiply(shape.getCTM());
+        silhouette.removeAttribute("id");
+        silhouette.removeAttribute("class");
+        silhouette.setAttribute(
+          "transform",
+          `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`,
+        );
+        silhouette.setAttribute(
+          "style",
+          "fill:black!important;stroke:black!important;opacity:1!important",
+        );
+        mask.append(silhouette);
+      });
+      defs.append(mask);
+      path.setAttribute("mask", `url(#${mask.id})`);
+      path.dataset.centerRouted = "true";
+    }
     path.style.strokeLinejoin = "round";
     path.dataset.topRouted = "true";
     const rootTransform =
@@ -3108,8 +3197,12 @@ function buildOverview(svg) {
   });
   // Prefix IDs and their references to keep markers and styles isolated from the main SVG.
   copy.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id);
-  const defs = svg.querySelector("defs")?.cloneNode(true);
-  if (defs) { defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs); }
+  const externalDefs = [...svg.querySelectorAll("defs")].filter(def => !content.contains(def));
+  const defs = externalDefs.length ? document.createElementNS("http://www.w3.org/2000/svg", "defs") : null;
+  if (defs) {
+    externalDefs.forEach(def => [...def.children].forEach(child => defs.append(child.cloneNode(true))));
+    defs.querySelectorAll("[id]").forEach(el => el.id = "overview-" + el.id); map.append(defs);
+  }
   for (const root of [copy, defs].filter(Boolean)) root.querySelectorAll("*").forEach(el => {
     for (const attr of Array.from(el.attributes)) {
       if (attr.value.includes("url(#")) el.setAttribute(attr.name, attr.value.replace(/url\(#/g, "url(#overview-"));
