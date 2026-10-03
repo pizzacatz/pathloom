@@ -339,7 +339,7 @@ test('mobile drawers close on Escape and return focus without shrinking the canv
   await expect(page.locator('#trace-toggle')).toBeFocused();
 });
 
-test('line click follows the curve for 500 ms, preserves zoom and lands on destination', async ({ page }) => {
+test('line click follows the straight route for 500 ms, preserves zoom and lands on destination', async ({ page }) => {
   await page.goto(appURL);
   await expect(page.locator('#stage svg')).toHaveCount(1);
   await page.locator('#onehundred').click();
@@ -500,7 +500,7 @@ for (const fixture of [
       return errors;
     });
     expect(violations).toEqual([]);
-    expect(await page.locator('#stage g.edgePaths path[data-top-routed]').evaluateAll(paths => paths.every(path => path.getAttribute('d').includes('C') && !/[LQ]/.test(path.getAttribute('d'))))).toBe(true);
+    expect(await page.locator('#stage g.edgePaths path[data-top-routed]').evaluateAll(paths => paths.every(path => path.getAttribute('d').includes('L') && !/[CQAST]/i.test(path.getAttribute('d'))))).toBe(true);
     await expect(page.locator('#stage g.edgePaths path[data-top-routed]')).not.toHaveCount(0);
   });
 }

@@ -29,3 +29,5 @@ Gentler vertical flow: all 56 Chromium/Firefox checks passed, plus eight routing
 Path transitions: 12 focused Chromium/Firefox checks passed, covering Next, branch selection, keyboard traversal, reverse Back, cancellation without losing history, reduced motion, curve-following duration/geometry, and view preservation on rerender.
 
 Centered branches: focused Chromium/Firefox checks cover center-origin geometry, fanning in opposite directions, source-shape masks, isolated overview references, exports, accessibility, routing clearance, top-entry arrowheads, and forward/reverse flyovers. Center-origin segments inside their own source are intentionally masked; click tests use an exposed portion of the curve. The default chart was visually reviewed.
+
+Straight-line routing: connections now use only M/L commands and sharp joins. Focused Chromium/Firefox checks verify downward-only forward routes, outer return lanes, source-center branch masks, top-entry arrowheads, box clearance, exports, overview, and 500 ms forward/reverse transitions. The default chart was visually reviewed.
