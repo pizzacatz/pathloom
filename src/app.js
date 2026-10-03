@@ -110,8 +110,9 @@ function frame() {
   if (VP && VP.panZoom) {
     try {
       const p = VP.panZoom.getPan(), z = VP.panZoom.getZoom();
-      const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y);
-      if (key !== VP.lastKey) { VP.lastKey = key; updateOverview(); }
+      const ctm = VP.root.getScreenCTM();
+      const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y) + "|" + ctm.a + "|" + ctm.e + "|" + ctm.f;
+      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); updateOverview(); }
     } catch (e) { /* ignore between renders */ }
   }
   requestAnimationFrame(frame);
@@ -216,8 +217,7 @@ async function renderGraph() {
   // ---- adaptive edge labels ----
   const viewport = stage.querySelector(".svg-pan-zoom_viewport");
   const labelEls = Array.from(stage.querySelectorAll("g.edgeLabels g.edgeLabel"));
-  // Label positions and collision spacing are solved before pan/zoom starts.
-  // Keep them anchored instead of sliding them back over nodes during a flight.
+  const relayoutLabels = createDynamicLabelLayout(svgEl, stage);
 
   // ---- highlight + centering ----
   function clearHL() {
@@ -440,7 +440,8 @@ async function renderGraph() {
 
   stage.onpointerdown = cancelFlyover;
   stage.onwheel = cancelFlyover;
-  VP = { panZoom: panZoom, lastKey: "" };
+  VP = { panZoom: panZoom, root: viewport, relayout: relayoutLabels, lastKey: "" };
+  relayoutLabels();
   if (current) focus(current, false);
   updateTraceControls();
   return true;

@@ -2437,8 +2437,8 @@ function routeFlowchart(svg, graph) {
     }
     if (!improved) break;
   }
-  // Labels are painted last and stay anchored during pan/zoom, so interaction
-  // cannot undo collision-free placement.
+  // Paint labels last and establish a collision-free initial placement.
+  // Dynamic navigation re-checks clearance before changing these positions.
   const finalLabels = labelPlan(true);
   for (const group of svg.querySelectorAll("g.edgeLabels"))
     group.parentElement.append(group);
@@ -2605,6 +2605,161 @@ function routeFlowchart(svg, graph) {
   svg.setAttribute("viewBox", `${left} ${top} ${right - left} ${bottom - top}`);
 }
 
+// Reposition labels along the visible part of their straight connection, while
+// retaining the same node/label clearance used by the initial layout.
+function createDynamicLabelLayout(svg, stage) {
+  const root =
+    svg.querySelector(".svg-pan-zoom_viewport") || svg.querySelector("g");
+  const inverse = root.getCTM().inverse();
+  const boundsOf = (element) => {
+    const box = element.getBBox(),
+      matrix = inverse.multiply(element.getCTM());
+    const points = [
+      [box.x, box.y],
+      [box.x + box.width, box.y],
+      [box.x, box.y + box.height],
+      [box.x + box.width, box.y + box.height],
+    ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(matrix));
+    return {
+      left: Math.min(...points.map((p) => p.x)),
+      right: Math.max(...points.map((p) => p.x)),
+      top: Math.min(...points.map((p) => p.y)),
+      bottom: Math.max(...points.map((p) => p.y)),
+    };
+  };
+  const nodes = [...svg.querySelectorAll("g.node")].map(boundsOf);
+  const paths = [
+    ...svg.querySelectorAll("g.edgePaths path[data-straight-routed]"),
+  ];
+  const labels = [...svg.querySelectorAll("g.edgeLabels g.edgeLabel")];
+  if (paths.length !== labels.length) return () => {};
+  const data = labels
+    .map((element, index) => {
+      const box = element.getBBox(),
+        path = paths[index],
+        len = path.getTotalLength();
+      if (!box.width || !box.height || !len) return null;
+      const matrix = inverse.multiply(path.getCTM()),
+        bounds = boundsOf(element);
+      return {
+        element,
+        box,
+        width: box.width + 16,
+        height: box.height + 12,
+        a: path.getPointAtLength(0).matrixTransform(matrix),
+        b: path.getPointAtLength(len).matrixTransform(matrix),
+        original: {
+          x: (bounds.left + bounds.right) / 2,
+          y: (bounds.top + bounds.bottom) / 2,
+        },
+        parent: element.parentElement
+          .getCTM()
+          .inverse()
+          .multiply(root.getCTM()),
+      };
+    })
+    .filter(Boolean);
+  const overlaps = (a, b, gap) =>
+    a.left < b.right + gap &&
+    a.right > b.left - gap &&
+    a.top < b.bottom + gap &&
+    a.bottom > b.top - gap;
+  return () => {
+    const screen = stage.getBoundingClientRect(),
+      matrix = root.getScreenCTM().inverse(),
+      topLeft = new DOMPoint(screen.left, screen.top).matrixTransform(matrix),
+      bottomRight = new DOMPoint(screen.right, screen.bottom).matrixTransform(
+        matrix,
+      ),
+      placed = [];
+    for (const label of data) {
+      const { a, b } = label;
+      let low = 0,
+        high = 1;
+      for (const [axis, min, max] of [
+        [
+          "x",
+          topLeft.x + label.width / 2 + 12,
+          bottomRight.x - label.width / 2 - 12,
+        ],
+        [
+          "y",
+          topLeft.y + label.height / 2 + 12,
+          bottomRight.y - label.height / 2 - 12,
+        ],
+      ]) {
+        const delta = b[axis] - a[axis];
+        if (min > max || (!delta && (a[axis] < min || a[axis] > max))) {
+          low = 1;
+          high = 0;
+          break;
+        }
+        if (delta) {
+          const t1 = (min - a[axis]) / delta,
+            t2 = (max - a[axis]) / delta;
+          low = Math.max(low, Math.min(t1, t2));
+          high = Math.min(high, Math.max(t1, t2));
+        }
+      }
+      const visible = low <= high,
+        preferred = visible ? (low + high) / 2 : 0.5;
+      const fractions = [
+        preferred,
+        ...Array.from({ length: 99 }, (_, i) => (i + 1) / 100),
+      ];
+      fractions.sort((x, y) => {
+        const rank = (t) =>
+          (visible && (t < low || t > high) ? 2 : 0) + Math.abs(t - preferred);
+        return rank(x) - rank(y);
+      });
+      let chosen;
+      const tryPoint = (x, y) => {
+        const box = {
+          left: x - label.width / 2,
+          right: x + label.width / 2,
+          top: y - label.height / 2,
+          bottom: y + label.height / 2,
+        };
+        if (
+          nodes.some((node) => overlaps(box, node, 12)) ||
+          placed.some((other) => overlaps(box, other, 8))
+        )
+          return false;
+        chosen = { x, y, box };
+        return true;
+      };
+      for (const t of fractions)
+        if (tryPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) break;
+      if (!chosen) tryPoint(label.original.x, label.original.y);
+      if (!chosen) {
+        const x = a.x + (b.x - a.x) * preferred,
+          y = a.y + (b.y - a.y) * preferred;
+        for (let ring = 1; !chosen && ring <= 12; ring++)
+          for (const sign of [-1, 1])
+            if (tryPoint(x + sign * ring * (label.width + 24), y)) break;
+        if (!chosen)
+          tryPoint(
+            Math.max(
+              ...nodes.map((node) => node.right),
+              ...placed.map((box) => box.right),
+            ) +
+              label.width / 2 +
+              24,
+            y,
+          );
+      }
+      const point = new DOMPoint(chosen.x, chosen.y).matrixTransform(
+        label.parent,
+      );
+      label.element.setAttribute(
+        "transform",
+        `translate(${point.x - label.box.x - label.box.width / 2},${point.y - label.box.y - label.box.height / 2})`,
+      );
+      placed.push(chosen.box);
+    }
+  };
+}
+
 </script>
 <script>
 // Pathloom: offline diagram editing and tracing.
@@ -2719,8 +2874,9 @@ function frame() {
   if (VP && VP.panZoom) {
     try {
       const p = VP.panZoom.getPan(), z = VP.panZoom.getZoom();
-      const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y);
-      if (key !== VP.lastKey) { VP.lastKey = key; updateOverview(); }
+      const ctm = VP.root.getScreenCTM();
+      const key = z.toFixed(4) + "|" + Math.round(p.x) + "|" + Math.round(p.y) + "|" + ctm.a + "|" + ctm.e + "|" + ctm.f;
+      if (key !== VP.lastKey) { VP.lastKey = key; VP.relayout(); updateOverview(); }
     } catch (e) { /* ignore between renders */ }
   }
   requestAnimationFrame(frame);
@@ -2825,8 +2981,7 @@ async function renderGraph() {
   // ---- adaptive edge labels ----
   const viewport = stage.querySelector(".svg-pan-zoom_viewport");
   const labelEls = Array.from(stage.querySelectorAll("g.edgeLabels g.edgeLabel"));
-  // Label positions and collision spacing are solved before pan/zoom starts.
-  // Keep them anchored instead of sliding them back over nodes during a flight.
+  const relayoutLabels = createDynamicLabelLayout(svgEl, stage);
 
   // ---- highlight + centering ----
   function clearHL() {
@@ -3049,7 +3204,8 @@ async function renderGraph() {
 
   stage.onpointerdown = cancelFlyover;
   stage.onwheel = cancelFlyover;
-  VP = { panZoom: panZoom, lastKey: "" };
+  VP = { panZoom: panZoom, root: viewport, relayout: relayoutLabels, lastKey: "" };
+  relayoutLabels();
   if (current) focus(current, false);
   updateTraceControls();
   return true;

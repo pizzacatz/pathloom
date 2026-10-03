@@ -613,3 +613,25 @@ test('line labels paint above nodes and repel labels and shapes across zoom and 
   await expect(page.locator('#stage g.edgeLabel')).toHaveCount(13);
   expect(await check()).toEqual({errors:[],count:12});
 });
+
+test('dynamic labels follow the visible line without colliding during pan and zoom', async ({ page }) => {
+  await page.goto(appURL);
+  await render(page,'%%{init: {"flowchart": {"rankSpacing": 1200}}}%%\nflowchart TD\nA[Start] -->|First choice| B[Finish]\nA -->|Second choice| B\nA -->|Third choice| B');
+  await page.locator('#onehundred').click();
+  const labels=page.locator('#stage g.edgeLabel');
+  await expect(labels).toHaveCount(3);
+  const before=await labels.first().getAttribute('transform');
+  await page.evaluate(()=>VP.panZoom.panBy({x:0,y:200}));
+  await expect.poll(()=>labels.first().getAttribute('transform')).not.toBe(before);
+  const check=()=>page.evaluate(()=>{
+    const labels=[...stage.querySelectorAll('g.edgeLabel')].map(node=>node.getBoundingClientRect()),
+      nodes=[...stage.querySelectorAll('g.node')].map(node=>node.getBoundingClientRect());
+    const overlaps=(a,b)=>a.left<b.right-.5 && a.right>b.left+.5 && a.top<b.bottom-.5 && a.bottom>b.top+.5;
+    return labels.every((label,i)=>nodes.every(node=>!overlaps(label,node)) && labels.slice(0,i).every(other=>!overlaps(label,other)));
+  });
+  expect(await check()).toBe(true);
+  const panned=await labels.first().getAttribute('transform');
+  await page.locator('#zin').click();
+  await expect.poll(()=>labels.first().getAttribute('transform')).not.toBe(panned);
+  expect(await check()).toBe(true);
+});
